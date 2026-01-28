@@ -1,0 +1,121 @@
+{
+  "name": "markdown-ai-translator",
+  "displayName": "Markdown AI Translator",
+  "description": "Translate and preview markdown files using AI (VSCode LanguageModel API)",
+  "version": "0.1.0",
+  "publisher": "breaking-brake",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/breaking-brake/markdown-ai-translator"
+  },
+  "icon": "resource/logo.png",
+  "galleryBanner": {
+    "color": "#0d223a",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdownTranslate.translatePreview",
+        "title": "Markdown: Translate",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "markdownTranslate.clearCache",
+        "title": "Markdown: Clear Translation Cache"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markdownTranslate.translatePreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "markdownTranslate.translatePreview",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == markdown"
+      }
+    ],
+    "configuration": {
+      "title": "Markdown AI Translator",
+      "properties": {
+        "markdownTranslate.targetLanguage": {
+          "type": "string",
+          "default": "Japanese",
+          "enum": [
+            "Japanese",
+            "Chinese (Simplified)",
+            "Chinese (Traditional)",
+            "Korean",
+            "Other"
+          ],
+          "enumDescriptions": [
+            "日本語",
+            "简体中文",
+            "繁體中文",
+            "한국어",
+            "Use custom language specified below"
+          ],
+          "description": "Target language for translation"
+        },
+        "markdownTranslate.customTargetLanguage": {
+          "type": "string",
+          "default": "",
+          "description": "Custom target language (used when Target Language is set to 'Other')"
+        },
+        "markdownTranslate.enableCache": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable translation cache"
+        },
+        "markdownTranslate.modelId": {
+          "type": "string",
+          "default": "grok-code-fast-1",
+          "description": "Language model ID to use for translation"
+        },
+        "markdownTranslate.chunkSize": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 50000,
+          "description": "Maximum characters to translate at once. Large documents will be translated in chunks."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:webview && npm run build:extension",
+    "build:webview": "cd src/webview && npm run build",
+    "build:extension": "tsc -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "watch:webview": "cd src/webview && npm run dev",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  }
+}

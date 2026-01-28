@@ -1,0 +1,45 @@
+# Development files
+.vscode/**
+.vscode-test/**
+.gitignore
+.git/**
+.env
+.env.*
+
+# Source files (use built files in out/ instead)
+src/**/*.ts
+tsconfig.json
+out/**/*.map
+
+# Webview source and build dependencies
+src/webview/src/**
+src/webview/node_modules/**
+src/webview/package.json
+src/webview/package-lock.json
+src/webview/tsconfig.json
+src/webview/vite.config.ts
+src/webview/index.html
+src/webview/biome.json
+
+# Keep only webview/dist for runtime
+!src/webview/dist/**
+
+# Development files
+.claude/**
+
+# Test files
+**/__tests__/**
+**/*.test.ts
+**/*.test.js
+**/test/**
+test-sample.md
+
+# Build tools
+node_modules/**
+*.vsix
+
+# Documentation (README for Marketplace, but some docs not needed)
+CLAUDE.md
+
+# Heavy assets (for README only, not needed in VSIX)
+resource/hero_demo.gif

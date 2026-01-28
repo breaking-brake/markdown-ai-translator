@@ -2,7 +2,7 @@
   "name": "markdown-ai-translator",
   "displayName": "Markdown AI Translator",
   "description": "Translate and preview markdown files using AI (VSCode LanguageModel API)",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "breaking-brake",
   "license": "MIT",
   "repository": {

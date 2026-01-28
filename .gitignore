@@ -3,3 +3,12 @@ node_modules/
 *.vsix
 .vscode-test/
 .DS_Store
+
+# Webview dist - only track essential build outputs
+src/webview/dist/*
+!src/webview/dist/index.html
+!src/webview/dist/assets
+src/webview/dist/assets/*
+!src/webview/dist/assets/main.css
+!src/webview/dist/assets/main.js
+!src/webview/dist/assets/main.js.map

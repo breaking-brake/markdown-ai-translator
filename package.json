@@ -111,11 +111,16 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.90.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
     "eslint": "^8.56.0",
+    "semantic-release": "^25.0.2",
     "typescript": "^5.3.0"
   }
 }

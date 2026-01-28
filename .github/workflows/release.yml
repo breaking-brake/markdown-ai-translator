@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - production
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install webview dependencies
+        run: npm ci --prefix src/webview
+
+      - name: Build
+        run: npm run build
+
+      - name: Release
+        id: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: npx semantic-release
+
+      - name: Package VSIX
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        run: npx vsce package
+
+      - name: Upload VSIX to Release
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          VSIX_FILE=$(ls *.vsix)
+          gh release upload v${{ steps.semantic-release.outputs.new_release_version }} "$VSIX_FILE" --clobber
+
+  sync-to-main:
+    name: Sync version to main
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge production to main
+        run: |
+          git fetch origin production
+          git merge origin/production --no-edit -m "chore: sync version from production [skip ci]"
+          git push origin main

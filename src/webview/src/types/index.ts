@@ -40,6 +40,8 @@ export interface PreviewData {
   chunkSize: number;
   /** Partial translation info (if document is large) */
   partial?: PartialTranslationInfo;
+  /** Base URI for resolving relative image paths */
+  imageBaseUri?: string;
 }
 
 export interface StreamingData {
@@ -49,6 +51,8 @@ export interface StreamingData {
   targetLanguage: string;
   /** Chunk size for large documents */
   chunkSize: number;
+  /** Base URI for resolving relative image paths */
+  imageBaseUri?: string;
 }
 
 export type ViewMode = 'side-by-side' | 'translation-only';

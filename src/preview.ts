@@ -24,6 +24,8 @@ export interface PreviewData {
   chunkSize: number;
   /** Partial translation info (if document is large) */
   partial?: PartialTranslationInfo;
+  /** Base URI for resolving relative image paths */
+  imageBaseUri?: string;
 }
 
 export interface StreamingData {
@@ -33,6 +35,8 @@ export interface StreamingData {
   targetLanguage: string;
   /** Chunk size for large documents */
   chunkSize: number;
+  /** Base URI for resolving relative image paths */
+  imageBaseUri?: string;
 }
 
 export interface PreviewMessage {
@@ -124,6 +128,20 @@ export class PreviewPanel {
       return PreviewPanel.currentPanel;
     }
 
+    // Get workspace folders for local resource access
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    const localResourceRoots = [
+      vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'dist'),
+      ...workspaceFolders.map(folder => folder.uri),
+    ];
+
+    // Add active editor's directory if available
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      const documentDir = vscode.Uri.joinPath(activeEditor.document.uri, '..');
+      localResourceRoots.push(documentDir);
+    }
+
     const panel = vscode.window.createWebviewPanel(
       'markdownTranslatePreview',
       'Translation Preview',
@@ -131,9 +149,7 @@ export class PreviewPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'dist'),
-        ],
+        localResourceRoots,
       }
     );
 
@@ -273,6 +289,14 @@ export class PreviewPanel {
     this._panel.webview.postMessage({ type: 'documentChanged', charDiff });
   }
 
+  /**
+   * Get webview URI for a document's directory (for resolving relative image paths)
+   */
+  public getImageBaseUri(documentUri: vscode.Uri): string {
+    const documentDir = vscode.Uri.joinPath(documentUri, '..');
+    return this._panel.webview.asWebviewUri(documentDir).toString() + '/';
+  }
+
   private _getWebviewHtml(): string {
     const webviewDistPath = path.join(this._extensionUri.fsPath, 'src', 'webview', 'dist');
 
@@ -297,8 +321,9 @@ export class PreviewPanel {
     html = html.replace(/\/assets\/main\.js/g, scriptUri.toString());
     html = html.replace(/\/assets\/main\.css/g, styleUri.toString());
 
-    // Add CSP meta tag
-    const csp = `default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; script-src ${this._panel.webview.cspSource}; img-src ${this._panel.webview.cspSource} https: data:;`;
+    // Add CSP meta tag (unsafe-eval required for Mermaid)
+    const cspSource = this._panel.webview.cspSource;
+    const csp = `default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource} 'unsafe-eval'; img-src ${cspSource} https: data:; font-src ${cspSource} data:;`;
     html = html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}">`);
 
     return html;

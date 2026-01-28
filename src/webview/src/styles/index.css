@@ -689,3 +689,79 @@ body {
 .katex-display > .katex {
   text-align: center;
 }
+
+/* GFM Alerts (GitHub-style) */
+.markdown-alert {
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-left: 4px solid;
+  border-radius: 4px;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+}
+
+.markdown-alert > :first-child {
+  margin-top: 0;
+}
+
+.markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.markdown-alert-title svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* NOTE - Blue */
+.markdown-alert-note {
+  border-left-color: #58a6ff;
+}
+
+.markdown-alert-note .markdown-alert-title {
+  color: #58a6ff;
+}
+
+/* TIP - Green */
+.markdown-alert-tip {
+  border-left-color: #3fb950;
+}
+
+.markdown-alert-tip .markdown-alert-title {
+  color: #3fb950;
+}
+
+/* IMPORTANT - Purple */
+.markdown-alert-important {
+  border-left-color: #a371f7;
+}
+
+.markdown-alert-important .markdown-alert-title {
+  color: #a371f7;
+}
+
+/* WARNING - Yellow */
+.markdown-alert-warning {
+  border-left-color: #d29922;
+}
+
+.markdown-alert-warning .markdown-alert-title {
+  color: #d29922;
+}
+
+/* CAUTION - Red */
+.markdown-alert-caution {
+  border-left-color: #f85149;
+}
+
+.markdown-alert-caution .markdown-alert-title {
+  color: #f85149;
+}

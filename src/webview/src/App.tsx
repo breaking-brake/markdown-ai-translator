@@ -1,5 +1,6 @@
 import 'katex/dist/katex.min.css';
 import { marked } from 'marked';
+import markedAlert from 'marked-alert';
 import markedKatex from 'marked-katex-extension';
 import mermaid from 'mermaid';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,7 +23,8 @@ mermaid.initialize({
   securityLevel: 'loose',
 });
 
-// Initialize marked options with KaTeX extension
+// Initialize marked options with extensions
+marked.use(markedAlert());
 marked.use(markedKatex({ throwOnError: false }));
 marked.setOptions({ gfm: true, breaks: true });
 

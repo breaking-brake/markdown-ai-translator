@@ -49,8 +49,8 @@
 
 - VSCode 1.90.0 or later
 - GitHub Copilot extension (Free plan is sufficient)
-  - Free plan: 50 [premium requests](https://docs.github.com/en/copilot/concepts/billing/copilot-requests#model-multipliers)/month
-  - Default model `grok-code-fast-1` does not consume premium requests (as of Jan 28, 2026)
+  - Free plan: 50 requests/month (each request counts as 1, regardless of [model multiplier](https://docs.github.com/en/copilot/concepts/billing/copilot-requests#model-multipliers))
+  - Pro plan: Default model `copilot-fast` (currently GPT-4o mini) has 0x multiplier (unlimited)
 
 ## Settings
 
@@ -58,7 +58,7 @@
 |---------|-------------|---------|
 | `markdownTranslate.targetLanguage` | Target language for translation | `Japanese` |
 | `markdownTranslate.customTargetLanguage` | Custom language (when "Other" is selected) | - |
-| `markdownTranslate.modelId` | Language model ID to use | `grok-code-fast-1` |
+| `markdownTranslate.modelId` | Language model ID to use | `copilot-fast` |
 | `markdownTranslate.chunkSize` | Max characters per translation chunk | `5000` |
 | `markdownTranslate.enableCache` | Enable translation cache | `true` |
 

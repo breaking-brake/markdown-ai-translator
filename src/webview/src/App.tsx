@@ -1,13 +1,56 @@
+import 'katex/dist/katex.min.css';
 import { marked } from 'marked';
+import markedAlert from 'marked-alert';
+import markedKatex from 'marked-katex-extension';
+import mermaid from 'mermaid';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorMessage } from './components/Error';
 import { Loading } from './components/Loading';
 import { PreviewPane } from './components/PreviewPane';
 import { Toolbar } from './components/Toolbar';
-import type { PartialTranslationInfo, PreviewData, StreamingData, ViewMode, VSCodeApi } from './types';
+import type {
+  PartialTranslationInfo,
+  PreviewData,
+  StreamingData,
+  ViewMode,
+  VSCodeApi,
+} from './types';
 
-// Initialize marked options
+// Initialize mermaid
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  securityLevel: 'loose',
+});
+
+// Initialize marked options with extensions
+marked.use(markedAlert());
+marked.use(markedKatex({ throwOnError: false }));
 marked.setOptions({ gfm: true, breaks: true });
+
+/**
+ * Parse markdown with image path resolution
+ * Converts relative image paths to absolute webview URIs
+ */
+async function parseMarkdown(markdown: string, imageBaseUri?: string): Promise<string> {
+  if (!imageBaseUri) {
+    return marked.parse(markdown);
+  }
+
+  // Create a custom renderer for this parse call
+  const renderer = new marked.Renderer();
+  const originalImage = renderer.image.bind(renderer);
+
+  renderer.image = (href: string, title: string | null, text: string) => {
+    // If href is relative (not http/https/data:), prepend imageBaseUri
+    if (href && !href.match(/^(https?:|data:)/i)) {
+      href = imageBaseUri + href;
+    }
+    return originalImage(href, title, text);
+  };
+
+  return marked.parse(markdown, { renderer });
+}
 
 type AppState =
   | { type: 'loading'; message: string }
@@ -54,18 +97,15 @@ function App() {
   const streamingStateRef = useRef<{ data: StreamingData; translationMd: string } | null>(null);
 
   // Parse content from preview data
-  const getParsedContent = useCallback(
-    async (data: PreviewData): Promise<ParsedContent> => {
-      const originalFullHtml = await marked.parse(data.originalFull);
-      const translatedFullHtml = await marked.parse(data.translatedFull);
+  const getParsedContent = useCallback(async (data: PreviewData): Promise<ParsedContent> => {
+    const originalFullHtml = await parseMarkdown(data.originalFull, data.imageBaseUri);
+    const translatedFullHtml = await parseMarkdown(data.translatedFull, data.imageBaseUri);
 
-      return {
-        original: { md: data.originalFull, html: originalFullHtml },
-        translation: { md: data.translatedFull, html: translatedFullHtml },
-      };
-    },
-    []
-  );
+    return {
+      original: { md: data.originalFull, html: originalFullHtml },
+      translation: { md: data.translatedFull, html: translatedFullHtml },
+    };
+  }, []);
 
   const [parsedContent, setParsedContent] = useState<ParsedContent | null>(null);
 
@@ -135,7 +175,10 @@ function App() {
         }
         case 'streamStart': {
           // Start streaming: show original immediately, translation will stream in
-          const originalHtml = await marked.parse(message.data.originalFull);
+          const originalHtml = await parseMarkdown(
+            message.data.originalFull,
+            message.data.imageBaseUri
+          );
           setStreamingOriginalHtml(originalHtml);
           setStreamingTranslationHtml('');
           // Initialize ref for tracking latest state
@@ -149,9 +192,10 @@ function App() {
           if (streamingStateRef.current) {
             const newTranslationMd = streamingStateRef.current.translationMd + message.chunk;
             streamingStateRef.current.translationMd = newTranslationMd;
+            const imageBaseUri = streamingStateRef.current.data.imageBaseUri;
             // Parse the markdown asynchronously
             (async () => {
-              const html = await marked.parse(newTranslationMd);
+              const html = await parseMarkdown(newTranslationMd, imageBaseUri);
               setStreamingTranslationHtml(html);
             })();
             setState((prev) => {
@@ -199,7 +243,10 @@ function App() {
         }
         case 'incrementalStart': {
           // Start incremental translation: show original immediately, loading in translation
-          const originalHtml = await marked.parse(message.data.originalFull);
+          const originalHtml = await parseMarkdown(
+            message.data.originalFull,
+            message.data.imageBaseUri
+          );
           setIncrementalOriginalHtml(originalHtml);
           incrementalStateRef.current = { data: message.data };
           setState({ type: 'incremental', data: message.data, message: message.message });
@@ -520,7 +567,11 @@ function App() {
           <button type="button" className="continue-btn" onClick={handleContinueTranslation}>
             Continue
           </button>
-          <button type="button" className="continue-btn translate-all-btn" onClick={handleTranslateAll}>
+          <button
+            type="button"
+            className="continue-btn translate-all-btn"
+            onClick={handleTranslateAll}
+          >
             Translate All ({partial.remainingChars.toLocaleString()} chars)
           </button>
           <span className="progress-text">
@@ -531,7 +582,8 @@ function App() {
       {isContinuing && lastPartialInfo && (
         <div className="continue-bar">
           <span className="progress-text translating">
-            Translating... {Math.round((lastPartialInfo.translatedUpTo / lastPartialInfo.totalChars) * 100)}%
+            Translating...{' '}
+            {Math.round((lastPartialInfo.translatedUpTo / lastPartialInfo.totalChars) * 100)}%
           </span>
         </div>
       )}

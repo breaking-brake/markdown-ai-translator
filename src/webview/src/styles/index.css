@@ -656,3 +656,36 @@ body {
   color: var(--vscode-errorForeground);
   border-color: var(--vscode-errorForeground);
 }
+
+/* Mermaid Diagrams */
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* KaTeX Overrides for VSCode theme */
+.katex {
+  font-size: 1.1em;
+}
+
+.katex-display {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.katex-display > .katex {
+  text-align: center;
+}

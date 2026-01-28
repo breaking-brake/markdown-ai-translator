@@ -87,7 +87,7 @@
         },
         "markdownTranslate.modelId": {
           "type": "string",
-          "default": "grok-code-fast-1",
+          "default": "copilot-fast",
           "description": "Language model ID to use for translation"
         },
         "markdownTranslate.chunkSize": {

@@ -22,6 +22,7 @@ export const PreviewPane = forwardRef<HTMLDivElement, PreviewPaneProps>(
     const mermaidIdRef = useRef(0);
 
     // Render Mermaid diagrams after HTML is set
+    // biome-ignore lint/correctness/useExhaustiveDependencies: html is needed to re-render Mermaid when content changes
     useEffect(() => {
       if (!contentRef.current || isStreaming) return;
 

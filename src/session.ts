@@ -1,10 +1,18 @@
 import * as vscode from 'vscode';
+import { ParsedDocument, BlockDiff, BlockChange, MarkdownBlock } from './types/block';
+import { parseMarkdownToBlocks } from './parser';
 
 export interface SessionState {
   originalContent: string;
   translatedContent: string;
   messages: vscode.LanguageModelChatMessage[];
   model: vscode.LanguageModelChat | null;
+  /** Parsed document for block-based diffing */
+  parsedDocument?: ParsedDocument;
+  /** Block translations cache (hash -> translation) */
+  blockTranslations?: Map<string, string>;
+  /** Index of last translated block (0-indexed, inclusive) */
+  translatedUpToBlockIndex?: number;
 }
 
 /**
@@ -34,13 +42,19 @@ export class TranslationSession {
     originalContent: string,
     translatedContent: string,
     messages: vscode.LanguageModelChatMessage[],
-    model: vscode.LanguageModelChat
+    model: vscode.LanguageModelChat,
+    parsedDocument?: ParsedDocument,
+    blockTranslations?: Map<string, string>,
+    translatedUpToBlockIndex?: number
   ): void {
     this.state = {
       originalContent,
       translatedContent,
       messages,
       model,
+      parsedDocument,
+      blockTranslations,
+      translatedUpToBlockIndex,
     };
   }
 
@@ -50,12 +64,52 @@ export class TranslationSession {
   updateSession(
     originalContent: string,
     translatedContent: string,
-    newMessages: vscode.LanguageModelChatMessage[]
+    newMessages: vscode.LanguageModelChatMessage[],
+    parsedDocument?: ParsedDocument,
+    blockTranslations?: Map<string, string>,
+    translatedUpToBlockIndex?: number
   ): void {
     if (!this.state) return;
     this.state.originalContent = originalContent;
     this.state.translatedContent = translatedContent;
     this.state.messages = [...this.state.messages, ...newMessages];
+    if (parsedDocument) {
+      this.state.parsedDocument = parsedDocument;
+    }
+    if (blockTranslations) {
+      // Merge new block translations with existing
+      if (this.state.blockTranslations) {
+        for (const [hash, translation] of blockTranslations) {
+          this.state.blockTranslations.set(hash, translation);
+        }
+      } else {
+        this.state.blockTranslations = blockTranslations;
+      }
+    }
+    if (translatedUpToBlockIndex !== undefined) {
+      this.state.translatedUpToBlockIndex = translatedUpToBlockIndex;
+    }
+  }
+
+  /**
+   * Get translated block index from session
+   */
+  getTranslatedUpToBlockIndex(): number | undefined {
+    return this.state?.translatedUpToBlockIndex;
+  }
+
+  /**
+   * Get block translations from session
+   */
+  getBlockTranslations(): Map<string, string> | undefined {
+    return this.state?.blockTranslations;
+  }
+
+  /**
+   * Get parsed document from session
+   */
+  getParsedDocument(): ParsedDocument | undefined {
+    return this.state?.parsedDocument;
   }
 
   /**
@@ -66,8 +120,180 @@ export class TranslationSession {
   }
 
   /**
-   * Detect changes between old and new content
+   * Detect block-level changes between old and new content
+   * Returns a BlockDiff with changed, added, removed blocks
+   */
+  detectBlockChanges(newContent: string): BlockDiff | null {
+    if (!this.state) return null;
+
+    const oldDocument = this.state.parsedDocument;
+    if (!oldDocument) {
+      // No parsed document - parse now
+      const parsed = parseMarkdownToBlocks(this.state.originalContent);
+      this.state.parsedDocument = parsed;
+      return this.detectBlockChangesInternal(parsed, newContent);
+    }
+
+    return this.detectBlockChangesInternal(oldDocument, newContent);
+  }
+
+  /**
+   * Internal implementation of block change detection
+   */
+  private detectBlockChangesInternal(oldDocument: ParsedDocument, newContent: string): BlockDiff | null {
+    const newDocument = parseMarkdownToBlocks(newContent);
+
+    // Quick check: if document hashes match, no changes
+    if (oldDocument.documentHash === newDocument.documentHash) {
+      return null;
+    }
+
+    const changes: BlockChange[] = [];
+    const unchangedBlocks: Array<{ oldIndex: number; newIndex: number; block: MarkdownBlock }> = [];
+
+    // Track which blocks have been matched
+    const matchedOldIndices = new Set<number>();
+    const matchedNewIndices = new Set<number>();
+
+    // Phase 1: Hash matching - find blocks with identical content
+    for (const newBlock of newDocument.blocks) {
+      const oldBlocksWithSameHash = oldDocument.blocksByHash.get(newBlock.hash);
+      if (oldBlocksWithSameHash) {
+        // Find the best match (closest position)
+        let bestMatch: MarkdownBlock | null = null;
+        let bestDistance = Infinity;
+
+        for (const oldBlock of oldBlocksWithSameHash) {
+          if (!matchedOldIndices.has(oldBlock.index)) {
+            const distance = Math.abs(oldBlock.index - newBlock.index);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              bestMatch = oldBlock;
+            }
+          }
+        }
+
+        if (bestMatch) {
+          matchedOldIndices.add(bestMatch.index);
+          matchedNewIndices.add(newBlock.index);
+          unchangedBlocks.push({
+            oldIndex: bestMatch.index,
+            newIndex: newBlock.index,
+            block: newBlock,
+          });
+        }
+      }
+    }
+
+    // Phase 2: Position-based matching for unmatched blocks
+    // Collect unmatched blocks
+    const unmatchedOld: MarkdownBlock[] = [];
+    const unmatchedNew: MarkdownBlock[] = [];
+
+    for (const oldBlock of oldDocument.blocks) {
+      if (!matchedOldIndices.has(oldBlock.index)) {
+        unmatchedOld.push(oldBlock);
+      }
+    }
+
+    for (const newBlock of newDocument.blocks) {
+      if (!matchedNewIndices.has(newBlock.index)) {
+        unmatchedNew.push(newBlock);
+      }
+    }
+
+    // Try to match unmatched blocks by position and type
+    for (const newBlock of unmatchedNew) {
+      // Find the closest unmatched old block of the same type
+      let bestMatch: MarkdownBlock | null = null;
+      let bestDistance = Infinity;
+
+      for (const oldBlock of unmatchedOld) {
+        if (!matchedOldIndices.has(oldBlock.index) && oldBlock.type === newBlock.type) {
+          const distance = Math.abs(oldBlock.index - newBlock.index);
+          if (distance < bestDistance && distance <= 3) {
+            // Only match if within 3 positions
+            bestDistance = distance;
+            bestMatch = oldBlock;
+          }
+        }
+      }
+
+      if (bestMatch) {
+        // Found a match - this is a modified block
+        matchedOldIndices.add(bestMatch.index);
+        matchedNewIndices.add(newBlock.index);
+        changes.push({
+          type: 'modified',
+          oldIndex: bestMatch.index,
+          newIndex: newBlock.index,
+          oldBlock: bestMatch,
+          newBlock: newBlock,
+        });
+      }
+    }
+
+    // Remaining unmatched old blocks are removed
+    for (const oldBlock of oldDocument.blocks) {
+      if (!matchedOldIndices.has(oldBlock.index)) {
+        changes.push({
+          type: 'removed',
+          oldIndex: oldBlock.index,
+          oldBlock: oldBlock,
+        });
+      }
+    }
+
+    // Remaining unmatched new blocks are added
+    for (const newBlock of newDocument.blocks) {
+      if (!matchedNewIndices.has(newBlock.index)) {
+        changes.push({
+          type: 'added',
+          newIndex: newBlock.index,
+          newBlock: newBlock,
+        });
+      }
+    }
+
+    // Sort changes by new index (or old index for removed)
+    changes.sort((a, b) => {
+      const aIndex = a.newIndex ?? a.oldIndex ?? 0;
+      const bIndex = b.newIndex ?? b.oldIndex ?? 0;
+      return aIndex - bIndex;
+    });
+
+    if (changes.length === 0) {
+      return null;
+    }
+
+    return {
+      hasChanges: true,
+      changes,
+      unchangedBlocks,
+      summary: this.summarizeBlockChanges(changes),
+    };
+  }
+
+  /**
+   * Create a human-readable summary of block changes
+   */
+  private summarizeBlockChanges(changes: BlockChange[]): string {
+    const added = changes.filter((c) => c.type === 'added').length;
+    const removed = changes.filter((c) => c.type === 'removed').length;
+    const modified = changes.filter((c) => c.type === 'modified').length;
+
+    const parts: string[] = [];
+    if (added > 0) parts.push(`${added} block${added > 1 ? 's' : ''} added`);
+    if (removed > 0) parts.push(`${removed} block${removed > 1 ? 's' : ''} removed`);
+    if (modified > 0) parts.push(`${modified} block${modified > 1 ? 's' : ''} modified`);
+
+    return parts.join(', ');
+  }
+
+  /**
+   * Detect changes between old and new content (line-based)
    * Returns a structured diff
+   * @deprecated Use detectBlockChanges for block-based diffing
    */
   detectChanges(newContent: string): ContentDiff | null {
     if (!this.state) return null;
@@ -215,3 +441,6 @@ export interface ContentDiff {
 
 // Singleton instance
 export const translationSession = new TranslationSession();
+
+// Re-export block types for convenience
+export type { BlockDiff, BlockChange, ParsedDocument, MarkdownBlock } from './types/block';

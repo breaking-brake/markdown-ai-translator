@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { type ModelInfo, PRESET_LANGUAGES, type ViewMode } from '../types';
 
 const CHUNK_SIZE_OPTIONS = [
+  { value: 500, label: '500 (debug)' },
   { value: 2000, label: '2,000' },
   { value: 5000, label: '5,000' },
   { value: 10000, label: '10,000' },
@@ -173,8 +174,14 @@ export function Toolbar({
                   <Tooltip.Content className="tooltip-content" sideOffset={5}>
                     <p>Number of characters to translate at once.</p>
                     <ul>
-                      <li><strong>Larger:</strong> Translates more text at once, but may consume more premium requests for large documents.</li>
-                      <li><strong>Smaller:</strong> Splits translation into smaller chunks, making it easier to save premium requests.</li>
+                      <li>
+                        <strong>Larger:</strong> Translates more text at once, but may consume more
+                        premium requests for large documents.
+                      </li>
+                      <li>
+                        <strong>Smaller:</strong> Splits translation into smaller chunks, making it
+                        easier to save premium requests.
+                      </li>
                     </ul>
                     <Tooltip.Arrow className="tooltip-arrow" />
                   </Tooltip.Content>

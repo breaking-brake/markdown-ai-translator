@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import {
-  translateContentStreaming,
   translateIncremental,
+  translateContentBlockBased,
+  translateBlocksIncremental,
+  translateNextBlockChunk,
+  translateAllRemainingBlocks,
   getAvailableModels,
   hasTranslationSession,
   clearTranslationSession,
@@ -244,16 +247,11 @@ export function activate(context: vscode.ExtensionContext) {
       };
       await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
-      // Determine if we need to chunk the translation
-      const needsChunking = originalFull.length > chunkSize;
-      const splitPoint = needsChunking ? findSplitPoint(originalFull, chunkSize) : originalFull.length;
-      const contentToTranslate = originalFull.slice(0, splitPoint);
-
       // Create cancellation source for webview cancel
       currentCancellationSource = new vscode.CancellationTokenSource();
       let partialTranslation = '';
 
-      // Translate document with streaming
+      // Translate document with block-based streaming
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Window,
@@ -261,24 +259,13 @@ export function activate(context: vscode.ExtensionContext) {
           cancellable: true,
         },
         async (progress, progressToken) => {
-          // Combine progress token with our own cancellation source
-          const combinedToken = {
-            isCancellationRequested: false,
-            onCancellationRequested: (listener: () => void) => {
-              progressToken.onCancellationRequested(listener);
-              currentCancellationSource!.token.onCancellationRequested(listener);
-              return { dispose: () => {} };
-            },
-          };
-
           // Track if cancelled from webview
-          let cancelledFromWebview = false;
           currentCancellationSource!.token.onCancellationRequested(() => {
-            cancelledFromWebview = true;
+            // Cancelled from webview
           });
 
-          const result = await translateContentStreaming(
-            contentToTranslate,
+          const result = await translateContentBlockBased(
+            originalFull,
             targetLanguage,
             currentCancellationSource!.token,
             (chunk) => {
@@ -292,15 +279,7 @@ export function activate(context: vscode.ExtensionContext) {
           const isCancelled = progressToken.isCancellationRequested || currentCancellationSource!.token.isCancellationRequested;
 
           if (isCancelled) {
-            // Estimate how much was translated based on partial translation length
-            const estimatedPosition = estimateTranslatedPosition(
-              partialTranslation,
-              contentToTranslate.length,
-              0,
-              originalFull.length
-            );
-
-            // Save partial translation and show "続きを翻訳" button
+            // Save partial translation
             currentState = {
               editor,
               originalFull,
@@ -308,29 +287,21 @@ export function activate(context: vscode.ExtensionContext) {
               models,
               selectedModelId,
               targetLanguage,
-              translatedUpTo: estimatedPosition,
+              translatedUpTo: partialTranslation.length,
             };
 
             // Start watching for document changes
             setupDocumentWatcher(editor.document, panel);
 
             // Show preview with partial info
-            const partial = createPartialInfo(originalFull, estimatedPosition);
+            const partial = createPartialInfo(originalFull, partialTranslation.length);
             panel.cancelStreaming(partial!);
-            log(`Translation cancelled at ~${Math.round((estimatedPosition / originalFull.length) * 100)}%`);
+            log('Translation cancelled');
             currentCancellationSource = undefined;
             return;
           }
 
           if (!result.success) {
-            // Estimate how much was translated
-            const estimatedPosition = estimateTranslatedPosition(
-              partialTranslation,
-              contentToTranslate.length,
-              0,
-              originalFull.length
-            );
-
             // Save partial translation and show error
             currentState = {
               editor,
@@ -339,10 +310,10 @@ export function activate(context: vscode.ExtensionContext) {
               models,
               selectedModelId,
               targetLanguage,
-              translatedUpTo: estimatedPosition,
+              translatedUpTo: partialTranslation.length,
             };
             setupDocumentWatcher(editor.document, panel);
-            const partial = createPartialInfo(originalFull, estimatedPosition);
+            const partial = createPartialInfo(originalFull, partialTranslation.length);
             panel.cancelStreaming(partial!);
             panel.showError(result.error || 'Translation failed');
             currentCancellationSource = undefined;
@@ -352,6 +323,13 @@ export function activate(context: vscode.ExtensionContext) {
           // End streaming only on success
           panel.endStreaming();
 
+          // Calculate approximate position based on block index
+          const blockIndex = result.translatedUpToBlockIndex ?? 0;
+          const totalBlocks = result.parsedDocument?.blocks.length ?? 1;
+          const approxPosition = result.hasMoreBlocks
+            ? Math.round(((blockIndex + 1) / totalBlocks) * originalFull.length)
+            : originalFull.length;
+
           // Store state
           currentState = {
             editor,
@@ -360,15 +338,15 @@ export function activate(context: vscode.ExtensionContext) {
             models,
             selectedModelId,
             targetLanguage,
-            translatedUpTo: splitPoint,
+            translatedUpTo: approxPosition,
           };
 
           // Start watching for document changes
           setupDocumentWatcher(editor.document, panel);
 
-          // Show preview with partial info if chunked
-          if (needsChunking) {
-            const partial = createPartialInfo(originalFull, splitPoint);
+          // Show preview with partial info if more to translate
+          if (result.hasMoreBlocks) {
+            const partial = createPartialInfo(originalFull, approxPosition);
             const previewData: PreviewData = {
               originalFull,
               translatedFull: result.translation!,
@@ -380,9 +358,9 @@ export function activate(context: vscode.ExtensionContext) {
               imageBaseUri,
             };
             panel.showPreview(previewData, `Translate: ${fileName}`);
-            log(`Translated ${Math.round((splitPoint / originalFull.length) * 100)}% (${splitPoint.toLocaleString()}/${originalFull.length.toLocaleString()} chars)`);
+            log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
           } else {
-            log('Translation complete');
+            log('Block-based translation complete');
           }
           currentCancellationSource = undefined;
         }
@@ -431,7 +409,7 @@ interface ReloadOptions {
 }
 
 /**
- * Reload translation - uses incremental translation if session exists
+ * Reload translation - uses block-based incremental translation if session exists
  */
 async function reloadTranslation(
   panel: PreviewPanel,
@@ -472,25 +450,37 @@ async function reloadTranslation(
     };
     await panel.startIncremental(incrementalData, `Translate: ${fileName}`, 'Detecting changes...');
 
+    // Create cancellation source for webview cancel
+    currentCancellationSource = new vscode.CancellationTokenSource();
+    let partialTranslation = '';
+
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Window,
         title: 'Updating Translation',
         cancellable: true,
       },
-      async (progress, token) => {
-        const result = await translateIncremental(
+      async (progress, progressToken) => {
+        // Use block-based incremental translation
+        const result = await translateBlocksIncremental(
           newContent,
           targetLanguage,
-          token,
-          (translationProgress) => {
-            progress.report({ message: translationProgress.message });
-            panel.updateIncrementalProgress(translationProgress.message);
-          }
+          currentCancellationSource!.token,
+          (chunk) => {
+            partialTranslation += chunk;
+            panel.sendStreamChunk(chunk);
+          },
+          (message) => {
+            progress.report({ message });
+            panel.updateIncrementalProgress(message);
+          },
+          { modelId: selectedModelId || undefined }
         );
 
+        const isCancelled = progressToken.isCancellationRequested || currentCancellationSource!.token.isCancellationRequested;
+
         // Check if cancelled
-        if (token.isCancellationRequested) {
+        if (isCancelled) {
           // Keep previous translation (if any) and show with "続きを翻訳" option
           const previousTranslation = currentState?.translatedFull || '';
           const previousTranslatedUpTo = currentState?.translatedUpTo || 0;
@@ -505,10 +495,18 @@ async function reloadTranslation(
           };
           const partial = createPartialInfo(newContent, previousTranslatedUpTo);
           panel.cancelStreaming(partial!);
+          currentCancellationSource = undefined;
           return;
         }
 
         if (result.success && result.translation) {
+          // Calculate approximate position based on block index
+          const blockIndex = result.translatedUpToBlockIndex ?? 0;
+          const totalBlocks = result.parsedDocument?.blocks.length ?? 1;
+          const approxPosition = result.hasMoreBlocks
+            ? Math.round(((blockIndex + 1) / totalBlocks) * newContent.length)
+            : newContent.length;
+
           // Update state
           currentState = {
             editor,
@@ -517,15 +515,31 @@ async function reloadTranslation(
             models,
             selectedModelId,
             targetLanguage,
-            translatedUpTo: newContent.length, // Incremental always translates full content
+            translatedUpTo: approxPosition,
           };
 
           // End incremental mode with translated content
           panel.endIncremental(result.translation);
 
-          if (result.fromCache) {
+          // Show preview with partial info if more to translate
+          if (result.hasMoreBlocks) {
+            const partial = createPartialInfo(newContent, approxPosition);
+            const previewData: PreviewData = {
+              originalFull: newContent,
+              translatedFull: result.translation,
+              models,
+              selectedModelId,
+              targetLanguage,
+              chunkSize,
+              partial,
+              imageBaseUri,
+            };
+            panel.showPreview(previewData, `Translate: ${fileName}`);
+            log(`Incremental translation: ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
+          } else if (result.fromCache) {
+            log('Translation loaded from cache');
           } else if (result.incremental) {
-          } else {
+            log('Block-based incremental translation complete');
           }
         } else {
           // Keep previous translation and show error
@@ -544,10 +558,11 @@ async function reloadTranslation(
           panel.cancelStreaming(partial!);
           panel.showError(result.error || 'Translation update failed');
         }
+        currentCancellationSource = undefined;
       }
     );
   } else {
-    // No session - do full translation with streaming
+    // No session - do full block-based translation with streaming
     const models = await getAvailableModels();
     const fileName = editor.document.fileName.split('/').pop() || 'document';
     const chunkSize = getChunkSize();
@@ -574,13 +589,8 @@ async function reloadTranslation(
         cancellable: true,
       },
       async (progress, progressToken) => {
-        // Track if cancelled from webview
-        let cancelledFromWebview = false;
-        currentCancellationSource!.token.onCancellationRequested(() => {
-          cancelledFromWebview = true;
-        });
-
-        const result = await translateContentStreaming(
+        // Use block-based translation
+        const result = await translateContentBlockBased(
           newContent,
           targetLanguage,
           currentCancellationSource!.token,
@@ -648,6 +658,13 @@ async function reloadTranslation(
         // End streaming only on success
         panel.endStreaming();
 
+        // Calculate approximate position based on block index
+        const blockIndex = result.translatedUpToBlockIndex ?? 0;
+        const totalBlocks = result.parsedDocument?.blocks.length ?? 1;
+        const approxPosition = result.hasMoreBlocks
+          ? Math.round(((blockIndex + 1) / totalBlocks) * newContent.length)
+          : newContent.length;
+
         currentState = {
           editor,
           originalFull: newContent,
@@ -655,9 +672,27 @@ async function reloadTranslation(
           models,
           selectedModelId,
           targetLanguage,
-          translatedUpTo: newContent.length, // Full translation from reload
+          translatedUpTo: approxPosition,
         };
 
+        // Show preview with partial info if more to translate
+        if (result.hasMoreBlocks) {
+          const partial = createPartialInfo(newContent, approxPosition);
+          const previewData: PreviewData = {
+            originalFull: newContent,
+            translatedFull: result.translation!,
+            models,
+            selectedModelId,
+            targetLanguage,
+            chunkSize,
+            partial,
+            imageBaseUri,
+          };
+          panel.showPreview(previewData, `Translate: ${fileName}`);
+          log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
+        } else {
+          log('Block-based translation complete');
+        }
         currentCancellationSource = undefined;
       }
     );
@@ -665,7 +700,7 @@ async function reloadTranslation(
 }
 
 /**
- * Continue translation for chunked documents
+ * Continue translation for chunked documents (block-based)
  */
 async function continueTranslation(
   panel: PreviewPanel,
@@ -675,15 +710,10 @@ async function continueTranslation(
     return;
   }
 
-  const { originalFull, translatedUpTo, targetLanguage, selectedModelId, models } = currentState;
-  const previousTranslation = currentState.translatedFull;
+  const { originalFull, targetLanguage, selectedModelId, models } = currentState;
   const editor = vscode.window.activeTextEditor || currentState.editor;
 
-  // Determine next chunk
   const chunkSize = getChunkSize();
-  const nextSplitPoint = findSplitPoint(originalFull, translatedUpTo + chunkSize);
-  const contentToTranslate = originalFull.slice(translatedUpTo, nextSplitPoint);
-
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
 
@@ -698,12 +728,9 @@ async function continueTranslation(
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
-  // Send already translated content as initial chunk
-  panel.sendStreamChunk(currentState.translatedFull);
-
   // Create cancellation source for webview cancel
   currentCancellationSource = new vscode.CancellationTokenSource();
-  let partialChunkTranslation = '';
+  let partialTranslation = '';
 
   await vscode.window.withProgress(
     {
@@ -712,21 +739,14 @@ async function continueTranslation(
       cancellable: true,
     },
     async (progress, progressToken) => {
-      const percentage = Math.round((nextSplitPoint / originalFull.length) * 100);
-      progress.report({ message: `Translating (${percentage}%)...` });
+      progress.report({ message: 'Translating...' });
 
-      // Track if cancelled from webview
-      let cancelledFromWebview = false;
-      currentCancellationSource!.token.onCancellationRequested(() => {
-        cancelledFromWebview = true;
-      });
-
-      const result = await translateContentStreaming(
-        contentToTranslate,
+      const result = await translateNextBlockChunk(
         targetLanguage,
+        chunkSize,
         currentCancellationSource!.token,
         (chunk) => {
-          partialChunkTranslation += chunk;
+          partialTranslation += chunk;
           panel.sendStreamChunk(chunk);
         },
         { modelId: selectedModelId || undefined }
@@ -735,32 +755,23 @@ async function continueTranslation(
       const isCancelled = progressToken.isCancellationRequested || currentCancellationSource!.token.isCancellationRequested;
 
       if (isCancelled) {
-        // Save combined translation and show "続きを翻訳" button
-        const newTranslatedFull = previousTranslation + partialChunkTranslation;
-
         currentState = {
           ...currentState!,
-          translatedFull: newTranslatedFull,
-          translatedUpTo: translatedUpTo, // Keep at previous position since chunk wasn't completed
+          translatedFull: partialTranslation,
         };
-
-        // Show preview with partial info
-        const partial = createPartialInfo(originalFull, translatedUpTo);
+        const partial = createPartialInfo(originalFull, currentState.translatedUpTo);
         panel.cancelStreaming(partial!);
-        log(`Translation cancelled during continuation`);
+        log('Translation cancelled during continuation');
         currentCancellationSource = undefined;
         return;
       }
 
       if (!result.success) {
-        // Save what we have and show error in preview
-        const newTranslatedFull = previousTranslation + partialChunkTranslation;
         currentState = {
           ...currentState!,
-          translatedFull: newTranslatedFull,
-          translatedUpTo: translatedUpTo,
+          translatedFull: partialTranslation,
         };
-        const partial = createPartialInfo(originalFull, translatedUpTo);
+        const partial = createPartialInfo(originalFull, currentState.translatedUpTo);
         panel.cancelStreaming(partial!);
         panel.showError(result.error || 'Translation failed');
         currentCancellationSource = undefined;
@@ -770,21 +781,26 @@ async function continueTranslation(
       // End streaming
       panel.endStreaming();
 
-      // Update state with combined translation
-      const newTranslatedFull = currentState!.translatedFull + result.translation!;
+      // Calculate approximate position based on block index
+      const blockIndex = result.translatedUpToBlockIndex ?? 0;
+      const totalBlocks = result.parsedDocument?.blocks.length ?? 1;
+      const approxPosition = result.hasMoreBlocks
+        ? Math.round(((blockIndex + 1) / totalBlocks) * originalFull.length)
+        : originalFull.length;
+
+      // Update state with new translated position
       currentState = {
         ...currentState!,
-        translatedFull: newTranslatedFull,
-        translatedUpTo: nextSplitPoint,
+        translatedFull: result.translation!,
+        translatedUpTo: approxPosition,
       };
 
       // Show preview with partial info if more to translate
-      const isComplete = nextSplitPoint >= originalFull.length;
-      if (!isComplete) {
-        const partial = createPartialInfo(originalFull, nextSplitPoint);
+      if (result.hasMoreBlocks) {
+        const partial = createPartialInfo(originalFull, approxPosition);
         const previewData: PreviewData = {
           originalFull,
-          translatedFull: newTranslatedFull,
+          translatedFull: result.translation!,
           models,
           selectedModelId,
           targetLanguage,
@@ -793,7 +809,7 @@ async function continueTranslation(
           imageBaseUri,
         };
         panel.showPreview(previewData, `Translate: ${fileName}`);
-        log(`Translated ${Math.round((nextSplitPoint / originalFull.length) * 100)}% (${nextSplitPoint.toLocaleString()}/${originalFull.length.toLocaleString()} chars)`);
+        log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
       } else {
         log('Translation complete');
       }
@@ -803,7 +819,7 @@ async function continueTranslation(
 }
 
 /**
- * Translate all remaining content at once
+ * Translate all remaining content at once (block-based)
  */
 async function translateAllRemaining(
   panel: PreviewPanel,
@@ -813,18 +829,14 @@ async function translateAllRemaining(
     return;
   }
 
-  const { originalFull, translatedUpTo, targetLanguage, selectedModelId, models } = currentState;
-  const previousTranslation = currentState.translatedFull;
+  const { originalFull, targetLanguage, selectedModelId, models } = currentState;
   const editor = vscode.window.activeTextEditor || currentState.editor;
   const chunkSize = getChunkSize();
-
-  // Get all remaining content
-  const remainingContent = originalFull.slice(translatedUpTo);
 
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
 
-  log(`Translating all remaining content (${remainingContent.length.toLocaleString()} chars)...`);
+  log('Translating all remaining blocks...');
 
   // Start streaming for the remaining content
   const streamingData: StreamingData = {
@@ -837,12 +849,9 @@ async function translateAllRemaining(
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
-  // Send already translated content as initial chunk
-  panel.sendStreamChunk(currentState.translatedFull);
-
   // Create cancellation source for webview cancel
   currentCancellationSource = new vscode.CancellationTokenSource();
-  let partialChunkTranslation = '';
+  let partialTranslation = '';
 
   await vscode.window.withProgress(
     {
@@ -853,18 +862,11 @@ async function translateAllRemaining(
     async (progress, progressToken) => {
       progress.report({ message: 'Translating...' });
 
-      // Track if cancelled from webview
-      let cancelledFromWebview = false;
-      currentCancellationSource!.token.onCancellationRequested(() => {
-        cancelledFromWebview = true;
-      });
-
-      const result = await translateContentStreaming(
-        remainingContent,
+      const result = await translateAllRemainingBlocks(
         targetLanguage,
         currentCancellationSource!.token,
         (chunk) => {
-          partialChunkTranslation += chunk;
+          partialTranslation += chunk;
           panel.sendStreamChunk(chunk);
         },
         { modelId: selectedModelId || undefined }
@@ -873,32 +875,23 @@ async function translateAllRemaining(
       const isCancelled = progressToken.isCancellationRequested || currentCancellationSource!.token.isCancellationRequested;
 
       if (isCancelled) {
-        // Save combined translation and show "続きを翻訳" button
-        const newTranslatedFull = previousTranslation + partialChunkTranslation;
-
         currentState = {
           ...currentState!,
-          translatedFull: newTranslatedFull,
-          translatedUpTo: translatedUpTo, // Keep at previous position since chunk wasn't completed
+          translatedFull: partialTranslation,
         };
-
-        // Show preview with partial info
-        const partial = createPartialInfo(originalFull, translatedUpTo);
+        const partial = createPartialInfo(originalFull, currentState.translatedUpTo);
         panel.cancelStreaming(partial!);
-        log(`Translation cancelled during translate-all`);
+        log('Translation cancelled during translate-all');
         currentCancellationSource = undefined;
         return;
       }
 
       if (!result.success) {
-        // Save what we have and show error in preview
-        const newTranslatedFull = previousTranslation + partialChunkTranslation;
         currentState = {
           ...currentState!,
-          translatedFull: newTranslatedFull,
-          translatedUpTo: translatedUpTo,
+          translatedFull: partialTranslation,
         };
-        const partial = createPartialInfo(originalFull, translatedUpTo);
+        const partial = createPartialInfo(originalFull, currentState.translatedUpTo);
         panel.cancelStreaming(partial!);
         panel.showError(result.error || 'Translation failed');
         currentCancellationSource = undefined;
@@ -908,15 +901,14 @@ async function translateAllRemaining(
       // End streaming
       panel.endStreaming();
 
-      // Update state with combined translation
-      const newTranslatedFull = currentState!.translatedFull + result.translation!;
+      // Update state - all content is now translated
       currentState = {
         ...currentState!,
-        translatedFull: newTranslatedFull,
-        translatedUpTo: originalFull.length, // All content translated
+        translatedFull: result.translation!,
+        translatedUpTo: originalFull.length,
       };
 
-      log('Translation complete (all remaining content)');
+      log('Translation complete (all remaining blocks)');
       currentCancellationSource = undefined;
     }
   );

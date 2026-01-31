@@ -377,19 +377,11 @@ function App() {
 
   // Render based on state
   if (state.type === 'loading') {
-    return (
-      <>
-        <Loading message={state.message} />
-      </>
-    );
+    return <Loading message={state.message} />;
   }
 
   if (state.type === 'error') {
-    return (
-      <>
-        <ErrorMessage message={state.message} />
-      </>
-    );
+    return <ErrorMessage message={state.message} />;
   }
 
   // Streaming mode
@@ -508,11 +500,7 @@ function App() {
   }
 
   if (!parsedContent) {
-    return (
-      <>
-        <Loading message="Processing..." />
-      </>
-    );
+    return <Loading message="Processing..." />;
   }
 
   const currentContent = parsedContent;
@@ -521,7 +509,7 @@ function App() {
 
   // Create continue button HTML for translation pane
   const translationHtml = hasMoreToTranslate
-    ? currentContent.translation.html + `<div class="continue-translation-placeholder"></div>`
+    ? `${currentContent.translation.html}<div class="continue-translation-placeholder"></div>`
     : currentContent.translation.html;
 
   return (

@@ -205,7 +205,7 @@ Preserve all Markdown formatting, code blocks, links, and structure exactly as t
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
 
----
+[Content to translate]
 
 ${content}`;
 
@@ -302,7 +302,7 @@ Preserve all Markdown formatting, code blocks, links, and structure exactly as t
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
 
----
+[Content to translate]
 
 ${content}`;
 
@@ -493,7 +493,7 @@ Preserve all Markdown formatting, code blocks, links, and structure exactly as t
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
 
----
+[Content to translate]
 
 ${contentToTranslate}`;
 
@@ -667,7 +667,7 @@ export async function translateNextBlockChunk(
     for (let i = 0; i < startIndex; i++) {
       const block = parsedDocument.blocks[i];
       const translation = existingTranslations.get(block.hash);
-      if (translation) {
+      if (translation !== undefined) {
         if (existingTranslation.length > 0) {
           existingTranslation += '\n';
         }
@@ -696,7 +696,7 @@ Preserve all Markdown formatting, code blocks, links, and structure exactly as t
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
 
----
+[Content to translate]
 
 ${contentToTranslate}`;
 
@@ -807,7 +807,7 @@ export async function translateAllRemainingBlocks(
     for (let i = 0; i < startIndex; i++) {
       const block = parsedDocument.blocks[i];
       const translation = existingTranslations.get(block.hash);
-      if (translation) {
+      if (translation !== undefined) {
         if (existingTranslation.length > 0) {
           existingTranslation += '\n';
         }
@@ -828,7 +828,7 @@ Preserve all Markdown formatting, code blocks, links, and structure exactly as t
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
 
----
+[Content to translate]
 
 ${contentToTranslate}`;
 
@@ -957,19 +957,11 @@ export async function translateBlocksIncremental(
   const oldTranslatedUpToBlockIndex = session.translatedUpToBlockIndex;
   const oldDocument = session.parsedDocument;
 
-  // Debug logging
-  console.log('[translateBlocksIncremental] Starting with:', {
-    oldTranslatedUpToBlockIndex,
-    oldDocumentBlockCount: oldDocument?.blocks.length,
-    sessionBlockTranslationsSize: session.blockTranslations?.size,
-  });
-
   // Detect block-level changes
   const blockDiff = translationSession.detectBlockChanges(newContent);
 
   if (!blockDiff) {
     // No changes detected - return cached translation
-    console.log('[translateBlocksIncremental] No changes detected, returning cached translation');
     onChunk(session.translatedContent);
     return {
       success: true,
@@ -980,12 +972,6 @@ export async function translateBlocksIncremental(
         oldDocument && oldTranslatedUpToBlockIndex < oldDocument.blocks.length - 1,
     };
   }
-
-  console.log('[translateBlocksIncremental] Block diff detected:', {
-    summary: blockDiff.summary,
-    changesCount: blockDiff.changes.length,
-    unchangedBlocksCount: blockDiff.unchangedBlocks.length,
-  });
 
   onProgress?.(`Detected changes: ${blockDiff.summary}`);
 
@@ -1001,15 +987,6 @@ export async function translateBlocksIncremental(
       const unchangedAfterBoundary = blockDiff.unchangedBlocks.filter(
         (ub) => ub.oldIndex <= oldTranslatedUpToBlockIndex
       );
-
-      console.log('[translateBlocksIncremental] Calculating newTranslatedUpToBlockIndex:', {
-        oldTranslatedUpToBlockIndex,
-        unchangedBlocksCount: blockDiff.unchangedBlocks.length,
-        unchangedAfterBoundaryCount: unchangedAfterBoundary.length,
-        unchangedAfterBoundaryIndices: unchangedAfterBoundary.map(ub => ({ old: ub.oldIndex, new: ub.newIndex })),
-        changesCount: blockDiff.changes.length,
-        changes: blockDiff.changes.map(c => ({ type: c.type, oldIndex: c.oldIndex, newIndex: c.newIndex })),
-      });
 
       if (unchangedAfterBoundary.length > 0) {
         // Find the max new index among unchanged blocks that were within translated range
@@ -1046,8 +1023,6 @@ export async function translateBlocksIncremental(
           newTranslatedUpToBlockIndex = Math.min(oldTranslatedUpToBlockIndex, newDocument.blocks.length - 1);
         }
       }
-
-      console.log('[translateBlocksIncremental] Final newTranslatedUpToBlockIndex:', newTranslatedUpToBlockIndex);
     }
 
     // Get existing block translations from session
@@ -1071,14 +1046,6 @@ export async function translateBlocksIncremental(
         const withinTranslatedRange = newTranslatedUpToBlockIndex === undefined ||
           block.index <= newTranslatedUpToBlockIndex;
         const hasTranslation = availableTranslations.has(block.hash);
-        console.log('[translateBlocksIncremental] Checking block for translation:', {
-          blockIndex: block.index,
-          blockHash: block.hash.substring(0, 8),
-          changeType: change.type,
-          withinTranslatedRange,
-          hasTranslation,
-          newTranslatedUpToBlockIndex,
-        });
         if (withinTranslatedRange && !hasTranslation) {
           blocksToTranslate.push(block);
         }
@@ -1087,14 +1054,6 @@ export async function translateBlocksIncremental(
 
     const hasMoreBlocks = newTranslatedUpToBlockIndex !== undefined &&
       newTranslatedUpToBlockIndex < newDocument.blocks.length - 1;
-
-    console.log('[translateBlocksIncremental] Summary:', {
-      blocksToTranslateCount: blocksToTranslate.length,
-      blocksToTranslateIndices: blocksToTranslate.map(b => b.index),
-      newTranslatedUpToBlockIndex,
-      newDocumentBlockCount: newDocument.blocks.length,
-      hasMoreBlocks,
-    });
 
     // If no blocks need translation, merge and return
     if (blocksToTranslate.length === 0) {
@@ -1217,8 +1176,8 @@ async function translateBlocksStreaming(
     // Output any unchanged blocks before this one (up to limit)
     for (let i = lastOutputIndex + 1; i < block.index && i <= lastBlockIndex; i++) {
       const prevBlock = document.blocks[i];
-      const prevTranslation = existingTranslations.get(prevBlock.hash) || newTranslations.get(prevBlock.hash);
-      if (prevTranslation) {
+      const prevTranslation = existingTranslations.get(prevBlock.hash) ?? newTranslations.get(prevBlock.hash);
+      if (prevTranslation !== undefined) {
         if (currentTranslation.length > 0) {
           currentTranslation += '\n';
           onChunk('\n');
@@ -1248,7 +1207,7 @@ async function translateBlocksStreaming(
       }
     );
 
-    if (translation) {
+    if (translation !== undefined && translation !== null) {
       newTranslations.set(block.hash, translation);
     }
 
@@ -1258,8 +1217,8 @@ async function translateBlocksStreaming(
   // Output any remaining unchanged blocks (up to the limit)
   for (let i = lastOutputIndex + 1; i <= lastBlockIndex && i < document.blocks.length; i++) {
     const block = document.blocks[i];
-    const translation = existingTranslations.get(block.hash) || newTranslations.get(block.hash);
-    if (translation) {
+    const translation = existingTranslations.get(block.hash) ?? newTranslations.get(block.hash);
+    if (translation !== undefined) {
       if (currentTranslation.length > 0) {
         currentTranslation += '\n';
         onChunk('\n');
@@ -1286,8 +1245,8 @@ function buildBlockContext(
   // Get previous block's translation if available
   if (block.index > 0) {
     const prevBlock = document.blocks[block.index - 1];
-    const prevTranslation = existingTranslations.get(prevBlock.hash) || newTranslations.get(prevBlock.hash);
-    if (prevTranslation) {
+    const prevTranslation = existingTranslations.get(prevBlock.hash) ?? newTranslations.get(prevBlock.hash);
+    if (prevTranslation !== undefined) {
       context.previousTranslation = prevTranslation;
     }
   }

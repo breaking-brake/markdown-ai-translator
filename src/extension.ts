@@ -971,7 +971,13 @@ function setupDocumentWatcher(document: vscode.TextDocument, panel: PreviewPanel
       const currentContent = document.getText();
       // Detect block-level changes
       const blockDiff = translationSession.detectBlockChanges(currentContent);
-      const changedBlockCount = blockDiff ? blockDiff.changes.length : 0;
+      // Filter out blank_lines from count - they don't need re-translation
+      const changedBlockCount = blockDiff
+        ? blockDiff.changes.filter((change) => {
+            const blockType = change.newBlock?.type ?? change.oldBlock?.type;
+            return blockType !== 'blank_lines';
+          }).length
+        : 0;
       panel.notifyDocumentChanged(changedBlockCount);
     }
   });

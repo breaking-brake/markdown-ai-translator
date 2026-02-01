@@ -503,10 +503,11 @@ ${contentToTranslate}`;
     const response = await model.sendRequest(messages, {}, token);
 
     let translation = '';
+    let cancelledDuringStream = false;
     for await (const fragment of response.text) {
       if (token.isCancellationRequested) {
-        translationSession.clearSession();
-        return { success: false, error: 'Translation cancelled' };
+        cancelledDuringStream = true;
+        break;
       }
       translation += fragment;
       onChunk(fragment);
@@ -518,6 +519,43 @@ ${contentToTranslate}`;
       blocksToTranslate,
       parsedTranslation
     );
+
+    // If cancelled, still save partial session state so we can continue later
+    if (cancelledDuringStream) {
+      // Estimate how many blocks were translated based on parsed output
+      const translatedBlockCount = parsedTranslation.blocks.length;
+      const estimatedLastBlockIndex = Math.min(translatedBlockCount - 1, lastBlockIndex);
+
+      // Only include translations for blocks we actually got
+      const partialBlockTranslations = new Map<string, string>();
+      for (let i = 0; i <= estimatedLastBlockIndex && i < blocksToTranslate.length; i++) {
+        const sourceBlock = blocksToTranslate[i];
+        if (i < parsedTranslation.blocks.length) {
+          partialBlockTranslations.set(sourceBlock.hash, parsedTranslation.blocks[i].content);
+        }
+      }
+
+      // Initialize session with partial data
+      const assistantMessage = vscode.LanguageModelChatMessage.Assistant(translation);
+      translationSession.initSession(
+        content,
+        translation,
+        [userMessage, assistantMessage],
+        model,
+        parsedDocument,
+        partialBlockTranslations,
+        estimatedLastBlockIndex >= 0 ? estimatedLastBlockIndex : undefined
+      );
+
+      return {
+        success: false,
+        error: 'Translation cancelled',
+        blockTranslations: partialBlockTranslations,
+        parsedDocument,
+        translatedUpToBlockIndex: estimatedLastBlockIndex >= 0 ? estimatedLastBlockIndex : undefined,
+        hasMoreBlocks: true,
+      };
+    }
 
     // Cache block translations
     if (enableCache) {

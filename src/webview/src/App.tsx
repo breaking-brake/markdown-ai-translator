@@ -282,6 +282,25 @@ function App() {
           setCharDiff(message.charDiff);
           break;
         }
+        case 'chunkSizeUpdate': {
+          // Chunk size was changed - update state
+          setState((prev) => {
+            if (prev.type === 'preview') {
+              return {
+                ...prev,
+                data: { ...prev.data, chunkSize: message.chunkSize },
+              };
+            }
+            if (prev.type === 'streaming' || prev.type === 'incremental') {
+              return {
+                ...prev,
+                data: { ...prev.data, chunkSize: message.chunkSize },
+              };
+            }
+            return prev;
+          });
+          break;
+        }
       }
     };
 
@@ -299,9 +318,14 @@ function App() {
     vscode.postMessage({ type: 'languageChange', language });
   }, []);
 
-  // Handle reload
-  const handleReload = useCallback(() => {
-    vscode.postMessage({ type: 'requestTranslation', scope: 'full' });
+  // Handle update (incremental translation)
+  const handleUpdate = useCallback(() => {
+    vscode.postMessage({ type: 'updateTranslation' });
+  }, []);
+
+  // Handle retranslate (from scratch)
+  const handleRetranslate = useCallback(() => {
+    vscode.postMessage({ type: 'retranslate' });
   }, []);
 
   // Handle continue translation (for chunked documents)
@@ -400,9 +424,10 @@ function App() {
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
-          onReload={handleReload}
+          onUpdate={handleUpdate}
+          onRetranslate={handleRetranslate}
           isStreaming={true}
-          charDiff={0}
+          changedBlockCount={0}
         />
         <div className={`preview-container ${viewMode}`}>
           <PreviewPane
@@ -462,9 +487,10 @@ function App() {
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
-          onReload={handleReload}
+          onUpdate={handleUpdate}
+          onRetranslate={handleRetranslate}
           isStreaming={true}
-          charDiff={0}
+          changedBlockCount={0}
         />
         <div className={`preview-container ${viewMode}`}>
           <PreviewPane
@@ -526,9 +552,10 @@ function App() {
         onModelChange={handleModelChange}
         onLanguageChange={handleLanguageChange}
         onChunkSizeChange={handleChunkSizeChange}
-        onReload={handleReload}
+        onUpdate={handleUpdate}
+        onRetranslate={handleRetranslate}
         isStreaming={false}
-        charDiff={charDiff}
+        changedBlockCount={charDiff}
       />
       <div className={`preview-container ${viewMode}`}>
         <PreviewPane

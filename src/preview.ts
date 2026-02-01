@@ -40,7 +40,7 @@ export interface StreamingData {
 }
 
 export interface PreviewMessage {
-  type: 'requestTranslation' | 'modelChange' | 'languageChange' | 'chunkSizeChange' | 'continueTranslation' | 'translateAll' | 'cancelTranslation' | 'ready';
+  type: 'requestTranslation' | 'updateTranslation' | 'retranslate' | 'modelChange' | 'languageChange' | 'chunkSizeChange' | 'continueTranslation' | 'translateAll' | 'cancelTranslation' | 'ready';
   modelId?: string;
   language?: string;
   chunkSize?: number;
@@ -52,6 +52,8 @@ export class PreviewPanel {
   private readonly _extensionUri: vscode.Uri;
   private _disposables: vscode.Disposable[] = [];
   private _onRequestTranslation: (() => void) | undefined;
+  private _onUpdateTranslation: (() => void) | undefined;
+  private _onRetranslate: (() => void) | undefined;
   private _onModelChange: ((modelId: string) => void) | undefined;
   private _onLanguageChange: ((language: string) => void) | undefined;
   private _onContinueTranslation: (() => void) | undefined;
@@ -81,6 +83,16 @@ export class PreviewPanel {
           case 'requestTranslation':
             if (this._onRequestTranslation) {
               this._onRequestTranslation();
+            }
+            break;
+          case 'updateTranslation':
+            if (this._onUpdateTranslation) {
+              this._onUpdateTranslation();
+            }
+            break;
+          case 'retranslate':
+            if (this._onRetranslate) {
+              this._onRetranslate();
             }
             break;
           case 'modelChange':
@@ -159,6 +171,14 @@ export class PreviewPanel {
 
   public onRequestTranslation(callback: () => void): void {
     this._onRequestTranslation = callback;
+  }
+
+  public onUpdateTranslation(callback: () => void): void {
+    this._onUpdateTranslation = callback;
+  }
+
+  public onRetranslate(callback: () => void): void {
+    this._onRetranslate = callback;
   }
 
   public onModelChange(callback: (modelId: string) => void): void {
@@ -283,10 +303,17 @@ export class PreviewPanel {
 
   /**
    * Notify webview that the source document has changed
-   * @param charDiff Character difference from original (0 means no changes)
+   * @param changedBlockCount Number of changed blocks (0 means no changes)
    */
-  public notifyDocumentChanged(charDiff: number): void {
-    this._panel.webview.postMessage({ type: 'documentChanged', charDiff });
+  public notifyDocumentChanged(changedBlockCount: number): void {
+    this._panel.webview.postMessage({ type: 'documentChanged', charDiff: changedBlockCount });
+  }
+
+  /**
+   * Update the chunk size in the webview
+   */
+  public updateChunkSize(chunkSize: number): void {
+    this._panel.webview.postMessage({ type: 'chunkSizeUpdate', chunkSize });
   }
 
   /**

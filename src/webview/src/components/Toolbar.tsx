@@ -1,5 +1,5 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { HelpCircle, RefreshCw } from 'lucide-react';
+import { HelpCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { type ModelInfo, PRESET_LANGUAGES, type ViewMode } from '../types';
 
@@ -24,9 +24,10 @@ interface ToolbarProps {
   onModelChange: (modelId: string) => void;
   onLanguageChange: (language: string) => void;
   onChunkSizeChange: (chunkSize: number) => void;
-  onReload: () => void;
+  onUpdate: () => void;
+  onRetranslate: () => void;
   isStreaming?: boolean;
-  charDiff?: number;
+  changedBlockCount?: number;
 }
 
 export function Toolbar({
@@ -41,12 +42,12 @@ export function Toolbar({
   onModelChange,
   onLanguageChange,
   onChunkSizeChange,
-  onReload,
+  onUpdate,
+  onRetranslate,
   isStreaming = false,
-  charDiff = 0,
+  changedBlockCount = 0,
 }: ToolbarProps) {
-  const hasDocumentChanges = charDiff !== 0;
-  const charDiffLabel = charDiff > 0 ? `+${charDiff}` : `${charDiff}`;
+  const hasDocumentChanges = changedBlockCount !== 0;
 
   // Check if current language is a preset or custom
   const isPresetLanguage = PRESET_LANGUAGES.some((lang) => lang.id === targetLanguage);
@@ -97,17 +98,28 @@ export function Toolbar({
         <div className="toolbar-group toolbar-actions">
           {hasDocumentChanges && (
             <span className="change-indicator" title="Source document has changed">
-              {charDiffLabel} chars
+              {changedBlockCount} {changedBlockCount === 1 ? 'block' : 'blocks'} changed
             </span>
           )}
           <button
             type="button"
-            className={`action-btn icon-btn ${isStreaming ? 'streaming' : ''} ${hasDocumentChanges ? 'has-changes' : ''}`}
-            onClick={onReload}
-            title={hasDocumentChanges ? 'Re-translate (document changed)' : 'Reload translation'}
-            disabled={isStreaming}
+            className={`action-btn ${isStreaming ? 'streaming' : ''} ${hasDocumentChanges ? 'has-changes' : ''}`}
+            onClick={onUpdate}
+            title="Update translation (changed blocks only)"
+            disabled={isStreaming || !hasDocumentChanges}
           >
             <RefreshCw size={14} className={isStreaming ? 'spin' : ''} />
+            Diff Update
+          </button>
+          <button
+            type="button"
+            className="action-btn"
+            onClick={onRetranslate}
+            title="Retranslate from scratch"
+            disabled={isStreaming}
+          >
+            <RotateCcw size={14} />
+            Retranslate
           </button>
           <button
             type="button"

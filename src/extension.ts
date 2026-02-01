@@ -12,6 +12,7 @@ import {
 } from './translator';
 import { PreviewPanel, PreviewData, StreamingData, PartialTranslationInfo } from './preview';
 import { translationCache } from './cache';
+import { translationSession } from './session';
 
 interface TranslationState {
   editor: vscode.TextEditor;
@@ -176,10 +177,26 @@ export function activate(context: vscode.ExtensionContext) {
 
       panel.showLoading('Translating document...');
 
-      // Set up handler for translation reload request
+      // Set up handler for translation reload request (legacy)
       panel.onRequestTranslation(async () => {
         if (currentState) {
           await reloadTranslation(panel, context, currentState.targetLanguage);
+        }
+      });
+
+      // Set up handler for update translation (incremental - changed blocks only)
+      panel.onUpdateTranslation(async () => {
+        if (currentState) {
+          await reloadTranslation(panel, context, currentState.targetLanguage);
+        }
+      });
+
+      // Set up handler for retranslate (from scratch)
+      panel.onRetranslate(async () => {
+        if (currentState) {
+          // Clear session to force full re-translation
+          clearTranslationSession();
+          await reloadTranslation(panel, context, currentState.targetLanguage, { bypassCache: true });
         }
       });
 
@@ -223,7 +240,27 @@ export function activate(context: vscode.ExtensionContext) {
 
       // Set up handler for chunk size change
       panel.onChunkSizeChange(async (newChunkSize: number) => {
+        const wasStreaming = currentCancellationSource !== undefined;
+
+        // Cancel current translation if streaming
+        if (wasStreaming) {
+          currentCancellationSource!.cancel();
+        }
+
+        // Save new chunk size setting
         await saveChunkSizeSetting(newChunkSize);
+
+        // Update chunk size in webview UI
+        panel.updateChunkSize(newChunkSize);
+
+        // If was streaming, continue translation with new chunk size after a short delay
+        if (wasStreaming && currentState && hasTranslationSession()) {
+          // Wait for cancellation to complete
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // Continue translation with new chunk size
+          await continueTranslation(panel, context);
+        }
       });
 
       // Set up handler for cancel translation
@@ -932,8 +969,10 @@ function setupDocumentWatcher(document: vscode.TextDocument, panel: PreviewPanel
     // Check if content has changed from stored state
     if (currentState) {
       const currentContent = document.getText();
-      const charDiff = currentContent.length - currentState.originalFull.length;
-      panel.notifyDocumentChanged(charDiff);
+      // Detect block-level changes
+      const blockDiff = translationSession.detectBlockChanges(currentContent);
+      const changedBlockCount = blockDiff ? blockDiff.changes.length : 0;
+      panel.notifyDocumentChanged(changedBlockCount);
     }
   });
 }

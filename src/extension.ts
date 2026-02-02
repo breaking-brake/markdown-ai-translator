@@ -976,11 +976,27 @@ function setupDocumentWatcher(document: vscode.TextDocument, panel: PreviewPanel
       const currentContent = document.getText();
       // Detect block-level changes
       const blockDiff = translationSession.detectBlockChanges(currentContent);
-      // Filter out blank_lines from count - they don't need re-translation
+      // Get the translated range - only count changes within translated blocks
+      const translatedUpToBlockIndex = translationSession.getTranslatedUpToBlockIndex();
+      // Filter changes:
+      // 1. Exclude blank_lines (they don't need re-translation)
+      // 2. Only count changes within the translated range
       const changedBlockCount = blockDiff
         ? blockDiff.changes.filter((change) => {
             const blockType = change.newBlock?.type ?? change.oldBlock?.type;
-            return blockType !== 'blank_lines';
+            if (blockType === 'blank_lines') return false;
+
+            // If no translation yet, no changes to report
+            if (translatedUpToBlockIndex === undefined) return false;
+
+            // Check if the change is within the translated range
+            if (change.type === 'modified' || change.type === 'removed') {
+              // For modified/removed, check old index
+              return (change.oldIndex ?? Infinity) <= translatedUpToBlockIndex;
+            } else {
+              // For added, check new index (inserted within translated area)
+              return (change.newIndex ?? Infinity) <= translatedUpToBlockIndex;
+            }
           }).length
         : 0;
       panel.notifyDocumentChanged(changedBlockCount);

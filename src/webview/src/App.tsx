@@ -87,6 +87,7 @@ function App() {
   const [copyFeedback, setCopyFeedback] = useState<'original' | 'translation' | null>(null);
   const [charDiff, setCharDiff] = useState<number>(0);
   const [isContinuing, setIsContinuing] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [lastPartialInfo, setLastPartialInfo] = useState<PartialTranslationInfo | null>(null);
 
   const originalRef = useRef<HTMLDivElement>(null);
@@ -230,6 +231,7 @@ function App() {
             streamingStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
@@ -250,6 +252,7 @@ function App() {
             streamingStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
@@ -286,6 +289,7 @@ function App() {
             incrementalStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
@@ -365,6 +369,7 @@ function App() {
 
   // Handle cancel translation
   const handleCancelTranslation = useCallback(() => {
+    setIsCanceling(true);
     vscode.postMessage({ type: 'cancelTranslation' });
   }, []);
 
@@ -475,8 +480,13 @@ function App() {
               return progress !== null ? `Translating... ${progress}%` : 'Translating...';
             })()}
           </span>
-          <button type="button" className="cancel-btn" onClick={handleCancelTranslation}>
-            Cancel
+          <button
+            type="button"
+            className="cancel-btn"
+            onClick={handleCancelTranslation}
+            disabled={isCanceling}
+          >
+            {isCanceling ? 'Canceling...' : 'Cancel'}
           </button>
         </div>
       </div>
@@ -529,8 +539,13 @@ function App() {
               ? `Translating... ${Math.round((lastPartialInfo.translatedUpTo / lastPartialInfo.totalChars) * 100)}%`
               : 'Translating...'}
           </span>
-          <button type="button" className="cancel-btn" onClick={handleCancelTranslation}>
-            Cancel
+          <button
+            type="button"
+            className="cancel-btn"
+            onClick={handleCancelTranslation}
+            disabled={isCanceling}
+          >
+            {isCanceling ? 'Canceling...' : 'Cancel'}
           </button>
         </div>
       </div>

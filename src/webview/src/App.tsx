@@ -180,10 +180,22 @@ function App() {
             message.data.imageBaseUri
           );
           setStreamingOriginalHtml(originalHtml);
-          setStreamingTranslationHtml('');
+
+          // Use existing translation if provided (for continue translation)
+          const existingTranslation = message.data.existingTranslation || '';
+          if (existingTranslation) {
+            const existingHtml = await parseMarkdown(
+              existingTranslation,
+              message.data.imageBaseUri
+            );
+            setStreamingTranslationHtml(existingHtml);
+          } else {
+            setStreamingTranslationHtml('');
+          }
+
           // Initialize ref for tracking latest state
-          streamingStateRef.current = { data: message.data, translationMd: '' };
-          setState({ type: 'streaming', data: message.data, translationMd: '' });
+          streamingStateRef.current = { data: message.data, translationMd: existingTranslation };
+          setState({ type: 'streaming', data: message.data, translationMd: existingTranslation });
           setCharDiff(0); // Reset on new translation
           break;
         }

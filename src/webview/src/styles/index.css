@@ -390,6 +390,7 @@ body {
 .pane-content {
   flex: 1;
   overflow-y: auto;
+  overflow-anchor: none; /* Prevent browser from adjusting scroll on content change */
   padding: 16px;
 }
 

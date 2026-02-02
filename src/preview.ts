@@ -37,6 +37,8 @@ export interface StreamingData {
   chunkSize: number;
   /** Base URI for resolving relative image paths */
   imageBaseUri?: string;
+  /** Existing translation content (for continue translation) */
+  existingTranslation?: string;
 }
 
 export interface PreviewMessage {

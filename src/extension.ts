@@ -754,6 +754,9 @@ async function continueTranslation(
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
 
+  // Get existing translation for continuation
+  const existingTranslation = currentState.translatedFull || '';
+
   // Start streaming for continuation
   const streamingData: StreamingData = {
     originalFull,
@@ -762,6 +765,7 @@ async function continueTranslation(
     targetLanguage,
     chunkSize,
     imageBaseUri,
+    existingTranslation,
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 

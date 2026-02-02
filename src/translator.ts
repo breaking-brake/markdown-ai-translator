@@ -4,6 +4,12 @@ import { translationSession, ContentDiff, BlockDiff, ParsedDocument, MarkdownBlo
 import { parseMarkdownToBlocks, blocksToContent } from './parser';
 import { BlockTranslationContext } from './types/block';
 
+/**
+ * Internal maximum chunk size to avoid "Response too long" errors.
+ * User-selected chunk sizes larger than this will be auto-split into multiple requests.
+ */
+const INTERNAL_MAX_CHUNK_SIZE = 10000;
+
 export interface TranslationResult {
   success: boolean;
   translation?: string;
@@ -475,7 +481,7 @@ export async function translateContentBlockBased(
       };
     }
 
-    // Determine which blocks to translate based on chunk size
+    // Determine which blocks to translate based on user's chunk size
     const { blocksToTranslate, lastBlockIndex } = selectBlocksForChunk(
       parsedDocument.blocks,
       0, // Start from beginning
@@ -484,11 +490,33 @@ export async function translateContentBlockBased(
 
     const hasMoreBlocks = lastBlockIndex < parsedDocument.blocks.length - 1;
 
-    // Build content to translate from selected blocks
-    const contentToTranslate = blocksToTranslate.map((b) => b.content).join('\n');
+    // Split blocks into internal chunks to avoid "Response too long" errors
+    const internalChunks = splitIntoInternalChunks(blocksToTranslate);
 
-    // Translate the selected blocks
-    const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
+    let fullTranslation = '';
+    const allBlockTranslations = new Map<string, string>();
+    const allMessages: vscode.LanguageModelChatMessage[] = [];
+    let cancelledDuringStream = false;
+    let lastTranslatedBlockIndex = -1;
+
+    // Process each internal chunk
+    for (let chunkIndex = 0; chunkIndex < internalChunks.length; chunkIndex++) {
+      if (token.isCancellationRequested) {
+        cancelledDuringStream = true;
+        break;
+      }
+
+      const internalBlocks = internalChunks[chunkIndex];
+      const contentToTranslate = internalBlocks.map((b) => b.content).join('\n');
+
+      // Add newline separator between internal chunks
+      if (chunkIndex > 0 && fullTranslation.length > 0) {
+        fullTranslation += '\n';
+        onChunk('\n');
+      }
+
+      // Translate the internal chunk
+      const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
 Preserve all Markdown formatting, code blocks, links, and structure exactly as they are.
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
@@ -497,91 +525,91 @@ Do not add any explanations or notes - output only the translated Markdown.
 
 ${contentToTranslate}`;
 
-    const userMessage = vscode.LanguageModelChatMessage.User(prompt);
-    const messages = [userMessage];
+      const userMessage = vscode.LanguageModelChatMessage.User(prompt);
+      const response = await model.sendRequest([userMessage], {}, token);
 
-    const response = await model.sendRequest(messages, {}, token);
+      let chunkTranslation = '';
+      for await (const fragment of response.text) {
+        if (token.isCancellationRequested) {
+          cancelledDuringStream = true;
+          break;
+        }
+        chunkTranslation += fragment;
+        fullTranslation += fragment;
+        onChunk(fragment);
+      }
 
-    let translation = '';
-    let cancelledDuringStream = false;
-    for await (const fragment of response.text) {
-      if (token.isCancellationRequested) {
-        cancelledDuringStream = true;
+      // Parse and map translations for this internal chunk
+      const parsedChunkTranslation = parseMarkdownToBlocks(chunkTranslation);
+      const chunkBlockTranslations = buildBlockTranslationMapForRange(
+        internalBlocks,
+        parsedChunkTranslation
+      );
+
+      // Merge into all block translations
+      for (const [hash, translation] of chunkBlockTranslations) {
+        allBlockTranslations.set(hash, translation);
+      }
+
+      // Track messages for session
+      const assistantMessage = vscode.LanguageModelChatMessage.Assistant(chunkTranslation);
+      allMessages.push(userMessage, assistantMessage);
+
+      // Calculate last translated block index (relative to full document)
+      const blocksBeforeThisChunk = internalChunks.slice(0, chunkIndex).reduce((sum, c) => sum + c.length, 0);
+      lastTranslatedBlockIndex = blocksBeforeThisChunk + Math.min(parsedChunkTranslation.blocks.length, internalBlocks.length) - 1;
+
+      if (cancelledDuringStream) {
         break;
       }
-      translation += fragment;
-      onChunk(fragment);
     }
 
-    // Parse the translation and build block mapping for translated blocks
-    const parsedTranslation = parseMarkdownToBlocks(translation);
-    const blockTranslations = buildBlockTranslationMapForRange(
-      blocksToTranslate,
-      parsedTranslation
-    );
-
-    // If cancelled, still save partial session state so we can continue later
+    // If cancelled, save partial session state
     if (cancelledDuringStream) {
-      // Estimate how many blocks were translated based on parsed output
-      const translatedBlockCount = parsedTranslation.blocks.length;
-      const estimatedLastBlockIndex = Math.min(translatedBlockCount - 1, lastBlockIndex);
-
-      // Only include translations for blocks we actually got
-      const partialBlockTranslations = new Map<string, string>();
-      for (let i = 0; i <= estimatedLastBlockIndex && i < blocksToTranslate.length; i++) {
-        const sourceBlock = blocksToTranslate[i];
-        if (i < parsedTranslation.blocks.length) {
-          partialBlockTranslations.set(sourceBlock.hash, parsedTranslation.blocks[i].content);
-        }
-      }
-
-      // Initialize session with partial data
-      const assistantMessage = vscode.LanguageModelChatMessage.Assistant(translation);
       translationSession.initSession(
         content,
-        translation,
-        [userMessage, assistantMessage],
+        fullTranslation,
+        allMessages,
         model,
         parsedDocument,
-        partialBlockTranslations,
-        estimatedLastBlockIndex >= 0 ? estimatedLastBlockIndex : undefined
+        allBlockTranslations,
+        lastTranslatedBlockIndex >= 0 ? lastTranslatedBlockIndex : undefined
       );
 
       return {
         success: false,
         error: 'Translation cancelled',
-        blockTranslations: partialBlockTranslations,
+        blockTranslations: allBlockTranslations,
         parsedDocument,
-        translatedUpToBlockIndex: estimatedLastBlockIndex >= 0 ? estimatedLastBlockIndex : undefined,
+        translatedUpToBlockIndex: lastTranslatedBlockIndex >= 0 ? lastTranslatedBlockIndex : undefined,
         hasMoreBlocks: true,
       };
     }
 
     // Cache block translations
     if (enableCache) {
-      translationCache.setBlocks(blockTranslations, targetLanguage);
+      translationCache.setBlocks(allBlockTranslations, targetLanguage);
       // Only cache full document if all blocks were translated
       if (!hasMoreBlocks) {
-        translationCache.set(content, translation);
+        translationCache.set(content, fullTranslation);
       }
     }
 
     // Initialize session with block data
-    const assistantMessage = vscode.LanguageModelChatMessage.Assistant(translation);
     translationSession.initSession(
       content,
-      translation,
-      [userMessage, assistantMessage],
+      fullTranslation,
+      allMessages,
       model,
       parsedDocument,
-      blockTranslations,
+      allBlockTranslations,
       lastBlockIndex
     );
 
     return {
       success: true,
-      translation,
-      blockTranslations,
+      translation: fullTranslation,
+      blockTranslations: allBlockTranslations,
       parsedDocument,
       translatedUpToBlockIndex: lastBlockIndex,
       hasMoreBlocks,
@@ -619,6 +647,38 @@ function selectBlocksForChunk(
   }
 
   return { blocksToTranslate, lastBlockIndex };
+}
+
+/**
+ * Split blocks into internal chunks to avoid "Response too long" errors.
+ * Each internal chunk will be at most INTERNAL_MAX_CHUNK_SIZE characters.
+ */
+function splitIntoInternalChunks(blocks: MarkdownBlock[]): MarkdownBlock[][] {
+  const chunks: MarkdownBlock[][] = [];
+  let currentChunk: MarkdownBlock[] = [];
+  let currentSize = 0;
+
+  for (const block of blocks) {
+    const blockSize = block.content.length;
+
+    // Always include at least one block in a chunk
+    if (currentChunk.length === 0 || currentSize + blockSize <= INTERNAL_MAX_CHUNK_SIZE) {
+      currentChunk.push(block);
+      currentSize += blockSize + 1; // +1 for newline
+    } else {
+      // Start a new chunk
+      chunks.push(currentChunk);
+      currentChunk = [block];
+      currentSize = blockSize + 1;
+    }
+  }
+
+  // Don't forget the last chunk
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
 }
 
 /**
@@ -716,7 +776,7 @@ export async function translateNextBlockChunk(
     // Note: existing translation is now passed via StreamingData.existingTranslation
     // and initialized in the webview, so we don't send it via onChunk anymore
 
-    // Select next chunk of blocks
+    // Select next chunk of blocks based on user's chunk size
     const { blocksToTranslate, lastBlockIndex } = selectBlocksForChunk(
       parsedDocument.blocks,
       startIndex,
@@ -725,11 +785,35 @@ export async function translateNextBlockChunk(
 
     const hasMoreBlocks = lastBlockIndex < parsedDocument.blocks.length - 1;
 
-    // Build content to translate
-    const contentToTranslate = blocksToTranslate.map((b) => b.content).join('\n');
+    // Split blocks into internal chunks to avoid "Response too long" errors
+    const internalChunks = splitIntoInternalChunks(blocksToTranslate);
 
-    // Translate
-    const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
+    let newTranslation = '';
+    const newBlockTranslations = new Map<string, string>();
+    const allMessages: vscode.LanguageModelChatMessage[] = [];
+
+    // Add initial newline if there was existing content
+    if (hasExistingTranslation) {
+      onChunk('\n');
+    }
+
+    // Process each internal chunk
+    for (let chunkIndex = 0; chunkIndex < internalChunks.length; chunkIndex++) {
+      if (token.isCancellationRequested) {
+        return { success: false, error: 'Translation cancelled' };
+      }
+
+      const internalBlocks = internalChunks[chunkIndex];
+      const contentToTranslate = internalBlocks.map((b) => b.content).join('\n');
+
+      // Add newline separator between internal chunks
+      if (chunkIndex > 0 && newTranslation.length > 0) {
+        newTranslation += '\n';
+        onChunk('\n');
+      }
+
+      // Translate
+      const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
 Preserve all Markdown formatting, code blocks, links, and structure exactly as they are.
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
@@ -738,31 +822,35 @@ Do not add any explanations or notes - output only the translated Markdown.
 
 ${contentToTranslate}`;
 
-    const userMessage = vscode.LanguageModelChatMessage.User(prompt);
-    const messages = [userMessage];
+      const userMessage = vscode.LanguageModelChatMessage.User(prompt);
+      const response = await model.sendRequest([userMessage], {}, token);
 
-    const response = await model.sendRequest(messages, {}, token);
-
-    // Add newline before new content if there was existing content
-    if (hasExistingTranslation) {
-      onChunk('\n');
-    }
-
-    let newTranslation = '';
-    for await (const fragment of response.text) {
-      if (token.isCancellationRequested) {
-        return { success: false, error: 'Translation cancelled' };
+      let chunkTranslation = '';
+      for await (const fragment of response.text) {
+        if (token.isCancellationRequested) {
+          return { success: false, error: 'Translation cancelled' };
+        }
+        chunkTranslation += fragment;
+        newTranslation += fragment;
+        onChunk(fragment);
       }
-      newTranslation += fragment;
-      onChunk(fragment);
-    }
 
-    // Parse and map new translations
-    const parsedNewTranslation = parseMarkdownToBlocks(newTranslation);
-    const newBlockTranslations = buildBlockTranslationMapForRange(
-      blocksToTranslate,
-      parsedNewTranslation
-    );
+      // Parse and map translations for this internal chunk
+      const parsedChunkTranslation = parseMarkdownToBlocks(chunkTranslation);
+      const chunkBlockTranslations = buildBlockTranslationMapForRange(
+        internalBlocks,
+        parsedChunkTranslation
+      );
+
+      // Merge into new block translations
+      for (const [hash, translation] of chunkBlockTranslations) {
+        newBlockTranslations.set(hash, translation);
+      }
+
+      // Track messages for session
+      const assistantMessage = vscode.LanguageModelChatMessage.Assistant(chunkTranslation);
+      allMessages.push(userMessage, assistantMessage);
+    }
 
     // Merge with existing translations
     const allBlockTranslations = new Map([...existingTranslations, ...newBlockTranslations]);
@@ -779,11 +867,10 @@ ${contentToTranslate}`;
     }
 
     // Update session
-    const assistantMessage = vscode.LanguageModelChatMessage.Assistant(newTranslation);
     translationSession.updateSession(
       session.originalContent,
       fullTranslation,
-      [userMessage, assistantMessage],
+      allMessages,
       parsedDocument,
       newBlockTranslations,
       lastBlockIndex
@@ -867,12 +954,36 @@ export async function translateAllRemainingBlocks(
       onChunk(existingTranslation);
     }
 
-    // Get all remaining blocks
+    // Get all remaining blocks and split into internal chunks
     const remainingBlocks = parsedDocument.blocks.slice(startIndex);
-    const contentToTranslate = remainingBlocks.map((b) => b.content).join('\n');
+    const internalChunks = splitIntoInternalChunks(remainingBlocks);
 
-    // Translate
-    const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
+    let newTranslation = '';
+    const newBlockTranslations = new Map<string, string>();
+    const allMessages: vscode.LanguageModelChatMessage[] = [];
+
+    // Add initial newline if there was existing content
+    if (existingTranslation.length > 0) {
+      onChunk('\n');
+    }
+
+    // Process each internal chunk
+    for (let chunkIndex = 0; chunkIndex < internalChunks.length; chunkIndex++) {
+      if (token.isCancellationRequested) {
+        return { success: false, error: 'Translation cancelled' };
+      }
+
+      const internalBlocks = internalChunks[chunkIndex];
+      const contentToTranslate = internalBlocks.map((b) => b.content).join('\n');
+
+      // Add newline separator between internal chunks
+      if (chunkIndex > 0 && newTranslation.length > 0) {
+        newTranslation += '\n';
+        onChunk('\n');
+      }
+
+      // Translate
+      const prompt = `You are a professional translator. Translate the following Markdown content to ${targetLanguage}.
 Preserve all Markdown formatting, code blocks, links, and structure exactly as they are.
 Only translate the text content, not code or URLs.
 Do not add any explanations or notes - output only the translated Markdown.
@@ -881,28 +992,35 @@ Do not add any explanations or notes - output only the translated Markdown.
 
 ${contentToTranslate}`;
 
-    const userMessage = vscode.LanguageModelChatMessage.User(prompt);
-    const response = await model.sendRequest([userMessage], {}, token);
+      const userMessage = vscode.LanguageModelChatMessage.User(prompt);
+      const response = await model.sendRequest([userMessage], {}, token);
 
-    if (existingTranslation.length > 0) {
-      onChunk('\n');
-    }
-
-    let newTranslation = '';
-    for await (const fragment of response.text) {
-      if (token.isCancellationRequested) {
-        return { success: false, error: 'Translation cancelled' };
+      let chunkTranslation = '';
+      for await (const fragment of response.text) {
+        if (token.isCancellationRequested) {
+          return { success: false, error: 'Translation cancelled' };
+        }
+        chunkTranslation += fragment;
+        newTranslation += fragment;
+        onChunk(fragment);
       }
-      newTranslation += fragment;
-      onChunk(fragment);
-    }
 
-    // Parse and map
-    const parsedNewTranslation = parseMarkdownToBlocks(newTranslation);
-    const newBlockTranslations = buildBlockTranslationMapForRange(
-      remainingBlocks,
-      parsedNewTranslation
-    );
+      // Parse and map translations for this internal chunk
+      const parsedChunkTranslation = parseMarkdownToBlocks(chunkTranslation);
+      const chunkBlockTranslations = buildBlockTranslationMapForRange(
+        internalBlocks,
+        parsedChunkTranslation
+      );
+
+      // Merge into new block translations
+      for (const [hash, translation] of chunkBlockTranslations) {
+        newBlockTranslations.set(hash, translation);
+      }
+
+      // Track messages for session
+      const assistantMessage = vscode.LanguageModelChatMessage.Assistant(chunkTranslation);
+      allMessages.push(userMessage, assistantMessage);
+    }
 
     const allBlockTranslations = new Map([...existingTranslations, ...newBlockTranslations]);
     const fullTranslation = mergeTranslatedBlocks(parsedDocument, allBlockTranslations);
@@ -914,11 +1032,10 @@ ${contentToTranslate}`;
     }
 
     // Update session
-    const assistantMessage = vscode.LanguageModelChatMessage.Assistant(newTranslation);
     translationSession.updateSession(
       session.originalContent,
       fullTranslation,
-      [userMessage, assistantMessage],
+      allMessages,
       parsedDocument,
       newBlockTranslations,
       parsedDocument.blocks.length - 1

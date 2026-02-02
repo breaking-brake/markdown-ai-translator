@@ -163,3 +163,42 @@ Document (Total: 11,000 chars)          Chunk Size: 5,000 chars
 - Chunks accumulate blocks until adding the next block would exceed the limit
 - `translatedUpToBlockIndex` tracks progress for partial translations
 - "Continue" translates the next chunk; "Translate All" processes remaining chunks
+
+### Internal Auto-Split (`INTERNAL_MAX_CHUNK_SIZE`)
+
+To avoid "Response too long" errors from the LLM API, large chunk sizes are automatically split into smaller internal requests.
+
+```
+INTERNAL_MAX_CHUNK_SIZE = 10,000 chars
+```
+
+**How it works:**
+
+```
+User selects: 50,000 chars
+                ↓
+Internal split: 10,000 x 5 requests (automatic, seamless)
+                ↓
+User experience: Single continuous streaming translation
+```
+
+**Examples:**
+
+| User Selection | Internal Requests | User Experience |
+|----------------|-------------------|-----------------|
+| 5,000 chars | 1 x 5,000 | Normal (no split) |
+| 20,000 chars | 2 x 10,000 | Seamless streaming |
+| 50,000 chars | 5 x 10,000 | Seamless streaming |
+
+**Implementation (`src/translator.ts`):**
+
+- `splitIntoInternalChunks()`: Splits blocks into internal chunks of max 10,000 chars
+- Each internal chunk is translated via separate API call
+- Streaming output is continuous (newline added between chunks)
+- "Continue" button only appears based on user's chunk size, not internal splits
+
+**Key Points:**
+- Internal splitting is transparent to the user
+- Prevents "Response too long" errors for large documents
+- Block translations are accumulated across internal chunks
+- Session state is properly maintained across internal requests

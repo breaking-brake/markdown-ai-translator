@@ -28,6 +28,8 @@ export interface PreviewData {
   imageBaseUri?: string;
   /** Debug mode enabled */
   debugMode?: boolean;
+  /** Auto-translate threshold (0 = disabled) */
+  autoTranslateThreshold?: number;
 }
 
 export interface StreamingData {
@@ -43,13 +45,16 @@ export interface StreamingData {
   existingTranslation?: string;
   /** Debug mode enabled */
   debugMode?: boolean;
+  /** Auto-translate threshold (0 = disabled) */
+  autoTranslateThreshold?: number;
 }
 
 export interface PreviewMessage {
-  type: 'requestTranslation' | 'updateTranslation' | 'retranslate' | 'modelChange' | 'languageChange' | 'chunkSizeChange' | 'continueTranslation' | 'translateAll' | 'cancelTranslation' | 'ready';
+  type: 'requestTranslation' | 'updateTranslation' | 'retranslate' | 'modelChange' | 'languageChange' | 'chunkSizeChange' | 'continueTranslation' | 'translateAll' | 'cancelTranslation' | 'autoTranslateThresholdChange' | 'ready';
   modelId?: string;
   language?: string;
   chunkSize?: number;
+  autoTranslateThreshold?: number;
 }
 
 export class PreviewPanel {
@@ -66,6 +71,7 @@ export class PreviewPanel {
   private _onTranslateAll: (() => void) | undefined;
   private _onChunkSizeChange: ((chunkSize: number) => void) | undefined;
   private _onCancelTranslation: (() => void) | undefined;
+  private _onAutoTranslateThresholdChange: ((threshold: number) => void) | undefined;
   private _isReady: boolean = false;
   private _readyResolver: (() => void) | undefined;
 
@@ -129,6 +135,11 @@ export class PreviewPanel {
           case 'cancelTranslation':
             if (this._onCancelTranslation) {
               this._onCancelTranslation();
+            }
+            break;
+          case 'autoTranslateThresholdChange':
+            if (this._onAutoTranslateThresholdChange && message.autoTranslateThreshold !== undefined) {
+              this._onAutoTranslateThresholdChange(message.autoTranslateThreshold);
             }
             break;
         }
@@ -209,6 +220,10 @@ export class PreviewPanel {
 
   public onCancelTranslation(callback: () => void): void {
     this._onCancelTranslation = callback;
+  }
+
+  public onAutoTranslateThresholdChange(callback: (threshold: number) => void): void {
+    this._onAutoTranslateThresholdChange = callback;
   }
 
   public showLoading(message: string = 'Translating...'): void {
@@ -327,6 +342,13 @@ export class PreviewPanel {
    */
   public updateModelId(modelId: string): void {
     this._panel.webview.postMessage({ type: 'modelUpdate', modelId });
+  }
+
+  /**
+   * Update the auto-translate threshold in the webview
+   */
+  public updateAutoTranslateThreshold(threshold: number): void {
+    this._panel.webview.postMessage({ type: 'autoTranslateThresholdUpdate', threshold });
   }
 
   /**

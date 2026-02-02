@@ -168,6 +168,89 @@ body {
   border-color: var(--vscode-inputValidation-warningBorder, #cca700);
 }
 
+/* Diff Update Group (Auto + Diff Update button) */
+.diff-update-group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.auto-translate-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--vscode-button-secondaryBackground);
+  cursor: default;
+}
+
+.auto-translate-label {
+  font-size: 11px;
+  color: var(--vscode-button-secondaryForeground);
+  opacity: 0.8;
+}
+
+.auto-translate-select {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+  min-width: 50px;
+  cursor: pointer;
+}
+
+.auto-translate-select:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.auto-translate-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diff-update-divider {
+  width: 1px;
+  background: var(--vscode-panel-border);
+}
+
+.diff-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.diff-update-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.diff-update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diff-update-btn.has-changes {
+  background: var(--vscode-inputValidation-warningBackground, #5a4a00);
+}
+
+.diff-update-btn.has-changes:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.diff-update-btn svg.spin {
+  animation: spin 1s linear infinite;
+}
+
 /* Model Select */
 .model-select {
   background: var(--vscode-dropdown-background);

@@ -336,6 +336,25 @@ function App() {
           });
           break;
         }
+        case 'autoTranslateThresholdUpdate': {
+          // Auto-translate threshold was changed - update state
+          setState((prev) => {
+            if (prev.type === 'preview') {
+              return {
+                ...prev,
+                data: { ...prev.data, autoTranslateThreshold: message.threshold },
+              };
+            }
+            if (prev.type === 'streaming' || prev.type === 'incremental') {
+              return {
+                ...prev,
+                data: { ...prev.data, autoTranslateThreshold: message.threshold },
+              };
+            }
+            return prev;
+          });
+          break;
+        }
       }
     };
 
@@ -375,6 +394,11 @@ function App() {
   // Handle chunk size change
   const handleChunkSizeChange = useCallback((chunkSize: number) => {
     vscode.postMessage({ type: 'chunkSizeChange', chunkSize });
+  }, []);
+
+  // Handle auto-translate threshold change
+  const handleAutoTranslateThresholdChange = useCallback((threshold: number) => {
+    vscode.postMessage({ type: 'autoTranslateThresholdChange', autoTranslateThreshold: threshold });
   }, []);
 
   // Handle translate all (translate remaining content at once)
@@ -456,11 +480,13 @@ function App() {
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
           debugMode={state.data.debugMode}
+          autoTranslateThreshold={state.data.autoTranslateThreshold}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
+          onAutoTranslateThresholdChange={handleAutoTranslateThresholdChange}
           onUpdate={handleUpdate}
           onRetranslate={handleRetranslate}
           isStreaming={true}
@@ -525,11 +551,13 @@ function App() {
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
           debugMode={state.data.debugMode}
+          autoTranslateThreshold={state.data.autoTranslateThreshold}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
+          onAutoTranslateThresholdChange={handleAutoTranslateThresholdChange}
           onUpdate={handleUpdate}
           onRetranslate={handleRetranslate}
           isStreaming={true}
@@ -596,11 +624,13 @@ function App() {
         targetLanguage={state.data.targetLanguage}
         chunkSize={state.data.chunkSize}
         debugMode={state.data.debugMode}
+        autoTranslateThreshold={state.data.autoTranslateThreshold}
         onViewModeChange={setViewMode}
         onSyncScrollChange={setSyncScroll}
         onModelChange={handleModelChange}
         onLanguageChange={handleLanguageChange}
         onChunkSizeChange={handleChunkSizeChange}
+        onAutoTranslateThresholdChange={handleAutoTranslateThresholdChange}
         onUpdate={handleUpdate}
         onRetranslate={handleRetranslate}
         isStreaming={false}

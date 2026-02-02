@@ -1,3 +1,9 @@
+## [0.3.1](https://github.com/breaking-brake/markdown-ai-translator/compare/v0.3.0...v0.3.1) (2026-02-02)
+
+### Improvements
+
+* add auto-translate on save feature ([#11](https://github.com/breaking-brake/markdown-ai-translator/issues/11)) ([0d2a4f0](https://github.com/breaking-brake/markdown-ai-translator/commit/0d2a4f00a3cb3bdc0194963fb79935aff2c385c3))
+
 ## [0.3.0](https://github.com/breaking-brake/markdown-ai-translator/compare/v0.2.0...v0.3.0) (2026-02-02)
 
 ### Features

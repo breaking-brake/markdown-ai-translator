@@ -64,6 +64,8 @@
             "Chinese (Simplified)",
             "Chinese (Traditional)",
             "Korean",
+            "Vietnamese",
+            "English",
             "Other"
           ],
           "enumDescriptions": [
@@ -71,6 +73,8 @@
             "简体中文",
             "繁體中文",
             "한국어",
+            "Tiếng Việt",
+            "English",
             "Use custom language specified below"
           ],
           "description": "Target language for translation"
@@ -96,6 +100,11 @@
           "minimum": 1000,
           "maximum": 50000,
           "description": "Maximum characters to translate at once. Large documents will be translated in chunks."
+        },
+        "markdownTranslate.debugMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug mode (shows additional debug options like small chunk sizes)"
         }
       }
     }

@@ -46,6 +46,8 @@ export interface PreviewData {
   imageBaseUri?: string;
   /** Debug mode enabled */
   debugMode?: boolean;
+  /** Auto-translate threshold (0 = disabled) */
+  autoTranslateThreshold?: number;
 }
 
 export interface StreamingData {
@@ -61,6 +63,8 @@ export interface StreamingData {
   existingTranslation?: string;
   /** Debug mode enabled */
   debugMode?: boolean;
+  /** Auto-translate threshold (0 = disabled) */
+  autoTranslateThreshold?: number;
 }
 
 export type ViewMode = 'side-by-side' | 'translation-only';

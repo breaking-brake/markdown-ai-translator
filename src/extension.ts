@@ -28,8 +28,10 @@ interface TranslationState {
 let currentState: TranslationState | undefined;
 let currentPanel: PreviewPanel | undefined;
 let documentWatcher: vscode.Disposable | undefined;
+let documentSaveWatcher: vscode.Disposable | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 let currentCancellationSource: vscode.CancellationTokenSource | undefined;
+let lastChangedBlockCount: number = 0;
 
 /**
  * Get or create the output channel for logging
@@ -113,6 +115,15 @@ function getChunkSize(): number {
 function getDebugMode(): boolean {
   const config = vscode.workspace.getConfiguration('markdownTranslate');
   return config.get<boolean>('debugMode', false);
+}
+
+/**
+ * Get auto-translate threshold from configuration
+ * @returns Number of block changes to trigger auto-translate (0 = disabled)
+ */
+function getAutoTranslateThreshold(): number {
+  const config = vscode.workspace.getConfiguration('markdownTranslate');
+  return config.get<number>('autoTranslateThreshold', 0);
 }
 
 /**
@@ -277,11 +288,18 @@ export function activate(context: vscode.ExtensionContext) {
         }
       });
 
+      // Set up handler for auto-translate threshold change
+      panel.onAutoTranslateThresholdChange(async (threshold: number) => {
+        await saveAutoTranslateThresholdSetting(threshold);
+        panel.updateAutoTranslateThreshold(threshold);
+      });
+
       // Start streaming - show original immediately
       const fileName = editor.document.fileName.split('/').pop() || 'document';
       const chunkSize = getChunkSize();
       const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
       const debugMode = getDebugMode();
+      const autoTranslateThreshold = getAutoTranslateThreshold();
       const streamingData: StreamingData = {
         originalFull,
         models,
@@ -290,6 +308,7 @@ export function activate(context: vscode.ExtensionContext) {
         chunkSize,
         imageBaseUri,
         debugMode,
+        autoTranslateThreshold,
       };
       await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -403,6 +422,7 @@ export function activate(context: vscode.ExtensionContext) {
               partial,
               imageBaseUri,
               debugMode,
+              autoTranslateThreshold,
             };
             panel.showPreview(previewData, `Translate: ${fileName}`);
             log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -437,6 +457,11 @@ const PRESET_LANGUAGES = ['Japanese', 'Chinese (Simplified)', 'Chinese (Traditio
 async function saveChunkSizeSetting(chunkSize: number): Promise<void> {
   const config = vscode.workspace.getConfiguration('markdownTranslate');
   await config.update('chunkSize', chunkSize, vscode.ConfigurationTarget.Global);
+}
+
+async function saveAutoTranslateThresholdSetting(threshold: number): Promise<void> {
+  const config = vscode.workspace.getConfiguration('markdownTranslate');
+  await config.update('autoTranslateThreshold', threshold, vscode.ConfigurationTarget.Global);
 }
 
 async function saveLanguageSetting(language: string): Promise<void> {
@@ -488,6 +513,7 @@ async function reloadTranslation(
     const chunkSize = getChunkSize();
     const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
     const debugMode = getDebugMode();
+    const autoTranslateThreshold = getAutoTranslateThreshold();
     const incrementalData: StreamingData = {
       originalFull: newContent,
       models,
@@ -496,6 +522,7 @@ async function reloadTranslation(
       chunkSize,
       imageBaseUri,
       debugMode,
+      autoTranslateThreshold,
     };
     await panel.startIncremental(incrementalData, `Translate: ${fileName}`, 'Detecting changes...');
 
@@ -583,6 +610,7 @@ async function reloadTranslation(
               partial,
               imageBaseUri,
               debugMode,
+              autoTranslateThreshold,
             };
             panel.showPreview(previewData, `Translate: ${fileName}`);
             log(`Incremental translation: ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -618,6 +646,7 @@ async function reloadTranslation(
     const chunkSize = getChunkSize();
     const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
     const debugMode = getDebugMode();
+    const autoTranslateThreshold = getAutoTranslateThreshold();
 
     const streamingData: StreamingData = {
       originalFull: newContent,
@@ -627,6 +656,7 @@ async function reloadTranslation(
       chunkSize,
       imageBaseUri,
       debugMode,
+      autoTranslateThreshold,
     };
     await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -740,6 +770,7 @@ async function reloadTranslation(
             partial,
             imageBaseUri,
             debugMode,
+            autoTranslateThreshold,
           };
           panel.showPreview(previewData, `Translate: ${fileName}`);
           log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -770,6 +801,7 @@ async function continueTranslation(
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
   const debugMode = getDebugMode();
+  const autoTranslateThreshold = getAutoTranslateThreshold();
 
   // Get existing translation for continuation
   const existingTranslation = currentState.translatedFull || '';
@@ -784,6 +816,7 @@ async function continueTranslation(
     imageBaseUri,
     existingTranslation,
     debugMode,
+    autoTranslateThreshold,
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -868,6 +901,7 @@ async function continueTranslation(
           partial,
           imageBaseUri,
           debugMode,
+          autoTranslateThreshold,
         };
         panel.showPreview(previewData, `Translate: ${fileName}`);
         log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -894,6 +928,7 @@ async function translateAllRemaining(
   const editor = vscode.window.activeTextEditor || currentState.editor;
   const chunkSize = getChunkSize();
   const debugMode = getDebugMode();
+  const autoTranslateThreshold = getAutoTranslateThreshold();
 
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
@@ -909,6 +944,7 @@ async function translateAllRemaining(
     chunkSize,
     imageBaseUri,
     debugMode,
+    autoTranslateThreshold,
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -979,13 +1015,19 @@ async function translateAllRemaining(
 
 /**
  * Set up document change watcher to detect changes in the source file
+ * - onDidChangeTextDocument: Real-time UI update (change count indicator)
+ * - onDidSaveTextDocument: Auto-translate trigger (only on save)
  */
 function setupDocumentWatcher(document: vscode.TextDocument, panel: PreviewPanel): void {
-  // Dispose existing watcher
+  // Dispose existing watchers
   if (documentWatcher) {
     documentWatcher.dispose();
   }
+  if (documentSaveWatcher) {
+    documentSaveWatcher.dispose();
+  }
 
+  // Real-time change detection for UI (shows "X blocks changed" indicator)
   documentWatcher = vscode.workspace.onDidChangeTextDocument((event) => {
     // Only watch the specific document
     if (event.document !== document) {
@@ -1020,7 +1062,25 @@ function setupDocumentWatcher(document: vscode.TextDocument, panel: PreviewPanel
             }
           }).length
         : 0;
+
+      // Update UI and store count for save-time check
+      lastChangedBlockCount = changedBlockCount;
       panel.notifyDocumentChanged(changedBlockCount);
+    }
+  });
+
+  // Auto-translate trigger on save only
+  documentSaveWatcher = vscode.workspace.onDidSaveTextDocument((savedDocument) => {
+    // Only watch the specific document
+    if (savedDocument !== document) {
+      return;
+    }
+
+    // Check if auto-translate should trigger
+    const threshold = getAutoTranslateThreshold();
+    if (threshold > 0 && lastChangedBlockCount >= threshold && !currentCancellationSource && currentState && currentPanel) {
+      log(`Auto-translate triggered on save: ${lastChangedBlockCount} blocks changed (threshold: ${threshold})`);
+      reloadTranslation(panel, {} as vscode.ExtensionContext, currentState.targetLanguage);
     }
   });
 }
@@ -1030,8 +1090,13 @@ export function deactivate() {
     documentWatcher.dispose();
     documentWatcher = undefined;
   }
+  if (documentSaveWatcher) {
+    documentSaveWatcher.dispose();
+    documentSaveWatcher = undefined;
+  }
   currentState = undefined;
   currentPanel = undefined;
+  lastChangedBlockCount = 0;
   clearTranslationSession();
   console.log('Markdown AI Translator is now deactivated');
 }

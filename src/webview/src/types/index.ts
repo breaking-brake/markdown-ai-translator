@@ -17,6 +17,8 @@ export const PRESET_LANGUAGES: LanguageOption[] = [
   { id: 'Chinese (Simplified)', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { id: 'Chinese (Traditional)', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
   { id: 'Korean', name: 'Korean', nativeName: '한국어' },
+  { id: 'Vietnamese', name: 'Vietnamese', nativeName: 'Tiếng Việt' },
+  { id: 'English', name: 'English', nativeName: 'English' },
 ];
 
 export interface PartialTranslationInfo {
@@ -42,6 +44,8 @@ export interface PreviewData {
   partial?: PartialTranslationInfo;
   /** Base URI for resolving relative image paths */
   imageBaseUri?: string;
+  /** Debug mode enabled */
+  debugMode?: boolean;
 }
 
 export interface StreamingData {
@@ -55,6 +59,8 @@ export interface StreamingData {
   imageBaseUri?: string;
   /** Existing translation content (for continue translation) */
   existingTranslation?: string;
+  /** Debug mode enabled */
+  debugMode?: boolean;
 }
 
 export type ViewMode = 'side-by-side' | 'translation-only';

@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { type ModelInfo, PRESET_LANGUAGES, type ViewMode } from '../types';
 
 const CHUNK_SIZE_OPTIONS = [
-  { value: 500, label: '500 (debug)' },
-  { value: 2000, label: '2,000' },
-  { value: 5000, label: '5,000' },
-  { value: 10000, label: '10,000' },
-  { value: 20000, label: '20,000' },
-  { value: 50000, label: '50,000' },
+  { value: 500, label: '500 (debug)', debug: true },
+  { value: 2000, label: '2,000', debug: false },
+  { value: 5000, label: '5,000', debug: false },
+  { value: 10000, label: '10,000', debug: false },
+  { value: 20000, label: '20,000', debug: false },
+  { value: 50000, label: '50,000', debug: false },
 ];
 
 interface ToolbarProps {
@@ -19,6 +19,7 @@ interface ToolbarProps {
   selectedModelId: string;
   targetLanguage: string;
   chunkSize: number;
+  debugMode?: boolean;
   onViewModeChange: (mode: ViewMode) => void;
   onSyncScrollChange: (sync: boolean) => void;
   onModelChange: (modelId: string) => void;
@@ -37,6 +38,7 @@ export function Toolbar({
   selectedModelId,
   targetLanguage,
   chunkSize,
+  debugMode = false,
   onViewModeChange,
   onSyncScrollChange,
   onModelChange,
@@ -48,6 +50,9 @@ export function Toolbar({
   changedBlockCount = 0,
 }: ToolbarProps) {
   const hasDocumentChanges = changedBlockCount !== 0;
+
+  // Filter chunk size options based on debug mode
+  const chunkSizeOptions = CHUNK_SIZE_OPTIONS.filter((option) => debugMode || !option.debug);
 
   // Check if current language is a preset or custom
   const isPresetLanguage = PRESET_LANGUAGES.some((lang) => lang.id === targetLanguage);
@@ -137,6 +142,7 @@ export function Toolbar({
             className="language-select"
             value={showCustomInput ? '__custom__' : targetLanguage}
             onChange={(e) => handleLanguageSelectChange(e.target.value)}
+            disabled={isStreaming}
           >
             {PRESET_LANGUAGES.map((lang) => (
               <option key={lang.id} value={lang.id}>
@@ -154,6 +160,7 @@ export function Toolbar({
               onChange={(e) => setCustomLanguage(e.target.value)}
               onBlur={handleCustomLanguageSubmit}
               onKeyDown={handleCustomLanguageKeyDown}
+              disabled={isStreaming}
             />
           )}
         </div>
@@ -163,6 +170,7 @@ export function Toolbar({
             className="model-select"
             value={selectedModelId}
             onChange={(e) => onModelChange(e.target.value)}
+            disabled={isStreaming}
           >
             <option value="">Auto (default)</option>
             {models.map((model) => (
@@ -205,8 +213,9 @@ export function Toolbar({
             className="chunk-select"
             value={chunkSize}
             onChange={(e) => onChunkSizeChange(Number(e.target.value))}
+            disabled={isStreaming}
           >
-            {CHUNK_SIZE_OPTIONS.map((option) => (
+            {chunkSizeOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label} chars
               </option>

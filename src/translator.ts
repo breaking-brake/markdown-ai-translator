@@ -678,6 +678,17 @@ export async function translateNextBlockChunk(
     };
   }
 
+  // Use the specified model if provided, otherwise use session model
+  let model = session.model;
+  if (options?.modelId && options.modelId !== session.model.id) {
+    const newModel = await getModel(options.modelId);
+    if (newModel) {
+      model = newModel;
+      // Update session with new model
+      translationSession.updateModel(newModel);
+    }
+  }
+
   const config = vscode.workspace.getConfiguration('markdownTranslate');
   const enableCache = config.get<boolean>('enableCache', true);
 
@@ -730,7 +741,7 @@ ${contentToTranslate}`;
     const userMessage = vscode.LanguageModelChatMessage.User(prompt);
     const messages = [userMessage];
 
-    const response = await session.model.sendRequest(messages, {}, token);
+    const response = await model.sendRequest(messages, {}, token);
 
     // Add newline before new content if there was existing content
     if (hasExistingTranslation) {
@@ -809,6 +820,17 @@ export async function translateAllRemainingBlocks(
     };
   }
 
+  // Use the specified model if provided, otherwise use session model
+  let model = session.model;
+  if (options?.modelId && options.modelId !== session.model.id) {
+    const newModel = await getModel(options.modelId);
+    if (newModel) {
+      model = newModel;
+      // Update session with new model
+      translationSession.updateModel(newModel);
+    }
+  }
+
   const config = vscode.workspace.getConfiguration('markdownTranslate');
   const enableCache = config.get<boolean>('enableCache', true);
 
@@ -860,7 +882,7 @@ Do not add any explanations or notes - output only the translated Markdown.
 ${contentToTranslate}`;
 
     const userMessage = vscode.LanguageModelChatMessage.User(prompt);
-    const response = await session.model.sendRequest([userMessage], {}, token);
+    const response = await model.sendRequest([userMessage], {}, token);
 
     if (existingTranslation.length > 0) {
       onChunk('\n');

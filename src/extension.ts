@@ -108,6 +108,14 @@ function getChunkSize(): number {
 }
 
 /**
+ * Get debug mode from configuration
+ */
+function getDebugMode(): boolean {
+  const config = vscode.workspace.getConfiguration('markdownTranslate');
+  return config.get<boolean>('debugMode', false);
+}
+
+/**
  * Create partial translation info
  */
 function createPartialInfo(originalFull: string, translatedUpTo: number): PartialTranslationInfo | undefined {
@@ -200,15 +208,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
       });
 
-      // Set up handler for model change - re-translate with new model
+      // Set up handler for model change - just save setting, don't re-translate
       panel.onModelChange(async (modelId: string) => {
         await saveModelSetting(modelId);
         if (currentState) {
           currentState.selectedModelId = modelId;
-          // Clear session since model changed
-          clearTranslationSession();
-          // Re-translate with new model, bypassing cache
-          await reloadTranslation(panel, context, currentState.targetLanguage, { bypassCache: true });
+          // Update UI immediately
+          panel.updateModelId(modelId);
+          // Next Continue/Diff Update/Retranslate will use the new model
         }
       });
 
@@ -274,6 +281,7 @@ export function activate(context: vscode.ExtensionContext) {
       const fileName = editor.document.fileName.split('/').pop() || 'document';
       const chunkSize = getChunkSize();
       const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
+      const debugMode = getDebugMode();
       const streamingData: StreamingData = {
         originalFull,
         models,
@@ -281,6 +289,7 @@ export function activate(context: vscode.ExtensionContext) {
         targetLanguage,
         chunkSize,
         imageBaseUri,
+        debugMode,
       };
       await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -393,6 +402,7 @@ export function activate(context: vscode.ExtensionContext) {
               chunkSize,
               partial,
               imageBaseUri,
+              debugMode,
             };
             panel.showPreview(previewData, `Translate: ${fileName}`);
             log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -477,6 +487,7 @@ async function reloadTranslation(
     // Start incremental mode - show original immediately
     const chunkSize = getChunkSize();
     const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
+    const debugMode = getDebugMode();
     const incrementalData: StreamingData = {
       originalFull: newContent,
       models,
@@ -484,6 +495,7 @@ async function reloadTranslation(
       targetLanguage,
       chunkSize,
       imageBaseUri,
+      debugMode,
     };
     await panel.startIncremental(incrementalData, `Translate: ${fileName}`, 'Detecting changes...');
 
@@ -570,6 +582,7 @@ async function reloadTranslation(
               chunkSize,
               partial,
               imageBaseUri,
+              debugMode,
             };
             panel.showPreview(previewData, `Translate: ${fileName}`);
             log(`Incremental translation: ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -604,6 +617,7 @@ async function reloadTranslation(
     const fileName = editor.document.fileName.split('/').pop() || 'document';
     const chunkSize = getChunkSize();
     const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
+    const debugMode = getDebugMode();
 
     const streamingData: StreamingData = {
       originalFull: newContent,
@@ -612,6 +626,7 @@ async function reloadTranslation(
       targetLanguage,
       chunkSize,
       imageBaseUri,
+      debugMode,
     };
     await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -724,6 +739,7 @@ async function reloadTranslation(
             chunkSize,
             partial,
             imageBaseUri,
+            debugMode,
           };
           panel.showPreview(previewData, `Translate: ${fileName}`);
           log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -753,6 +769,7 @@ async function continueTranslation(
   const chunkSize = getChunkSize();
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
+  const debugMode = getDebugMode();
 
   // Get existing translation for continuation
   const existingTranslation = currentState.translatedFull || '';
@@ -766,6 +783,7 @@ async function continueTranslation(
     chunkSize,
     imageBaseUri,
     existingTranslation,
+    debugMode,
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 
@@ -849,6 +867,7 @@ async function continueTranslation(
           chunkSize,
           partial,
           imageBaseUri,
+          debugMode,
         };
         panel.showPreview(previewData, `Translate: ${fileName}`);
         log(`Translated ${Math.round(((blockIndex + 1) / totalBlocks) * 100)}% (${blockIndex + 1}/${totalBlocks} blocks)`);
@@ -874,6 +893,7 @@ async function translateAllRemaining(
   const { originalFull, targetLanguage, selectedModelId, models } = currentState;
   const editor = vscode.window.activeTextEditor || currentState.editor;
   const chunkSize = getChunkSize();
+  const debugMode = getDebugMode();
 
   const fileName = editor.document.fileName.split('/').pop() || 'document';
   const imageBaseUri = panel.getImageBaseUri(editor.document.uri);
@@ -888,6 +908,7 @@ async function translateAllRemaining(
     targetLanguage,
     chunkSize,
     imageBaseUri,
+    debugMode,
   };
   await panel.startStreaming(streamingData, `Translate: ${fileName}`);
 

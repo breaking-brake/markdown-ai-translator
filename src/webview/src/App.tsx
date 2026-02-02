@@ -317,6 +317,25 @@ function App() {
           });
           break;
         }
+        case 'modelUpdate': {
+          // Model was changed - update state
+          setState((prev) => {
+            if (prev.type === 'preview') {
+              return {
+                ...prev,
+                data: { ...prev.data, selectedModelId: message.modelId },
+              };
+            }
+            if (prev.type === 'streaming' || prev.type === 'incremental') {
+              return {
+                ...prev,
+                data: { ...prev.data, selectedModelId: message.modelId },
+              };
+            }
+            return prev;
+          });
+          break;
+        }
       }
     };
 
@@ -436,6 +455,7 @@ function App() {
           selectedModelId={state.data.selectedModelId}
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
+          debugMode={state.data.debugMode}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
@@ -504,6 +524,7 @@ function App() {
           selectedModelId={state.data.selectedModelId}
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
+          debugMode={state.data.debugMode}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
@@ -574,6 +595,7 @@ function App() {
         selectedModelId={state.data.selectedModelId}
         targetLanguage={state.data.targetLanguage}
         chunkSize={state.data.chunkSize}
+        debugMode={state.data.debugMode}
         onViewModeChange={setViewMode}
         onSyncScrollChange={setSyncScroll}
         onModelChange={handleModelChange}

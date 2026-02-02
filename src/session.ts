@@ -92,6 +92,15 @@ export class TranslationSession {
   }
 
   /**
+   * Update the model used in the session
+   */
+  updateModel(model: vscode.LanguageModelChat): void {
+    if (this.state) {
+      this.state.model = model;
+    }
+  }
+
+  /**
    * Get translated block index from session
    */
   getTranslatedUpToBlockIndex(): number | undefined {

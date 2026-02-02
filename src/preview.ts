@@ -26,6 +26,8 @@ export interface PreviewData {
   partial?: PartialTranslationInfo;
   /** Base URI for resolving relative image paths */
   imageBaseUri?: string;
+  /** Debug mode enabled */
+  debugMode?: boolean;
 }
 
 export interface StreamingData {
@@ -39,6 +41,8 @@ export interface StreamingData {
   imageBaseUri?: string;
   /** Existing translation content (for continue translation) */
   existingTranslation?: string;
+  /** Debug mode enabled */
+  debugMode?: boolean;
 }
 
 export interface PreviewMessage {
@@ -316,6 +320,13 @@ export class PreviewPanel {
    */
   public updateChunkSize(chunkSize: number): void {
     this._panel.webview.postMessage({ type: 'chunkSizeUpdate', chunkSize });
+  }
+
+  /**
+   * Update the selected model in the webview
+   */
+  public updateModelId(modelId: string): void {
+    this._panel.webview.postMessage({ type: 'modelUpdate', modelId });
   }
 
   /**

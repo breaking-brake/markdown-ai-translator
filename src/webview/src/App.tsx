@@ -87,6 +87,7 @@ function App() {
   const [copyFeedback, setCopyFeedback] = useState<'original' | 'translation' | null>(null);
   const [charDiff, setCharDiff] = useState<number>(0);
   const [isContinuing, setIsContinuing] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [lastPartialInfo, setLastPartialInfo] = useState<PartialTranslationInfo | null>(null);
 
   const originalRef = useRef<HTMLDivElement>(null);
@@ -180,10 +181,22 @@ function App() {
             message.data.imageBaseUri
           );
           setStreamingOriginalHtml(originalHtml);
-          setStreamingTranslationHtml('');
+
+          // Use existing translation if provided (for continue translation)
+          const existingTranslation = message.data.existingTranslation || '';
+          if (existingTranslation) {
+            const existingHtml = await parseMarkdown(
+              existingTranslation,
+              message.data.imageBaseUri
+            );
+            setStreamingTranslationHtml(existingHtml);
+          } else {
+            setStreamingTranslationHtml('');
+          }
+
           // Initialize ref for tracking latest state
-          streamingStateRef.current = { data: message.data, translationMd: '' };
-          setState({ type: 'streaming', data: message.data, translationMd: '' });
+          streamingStateRef.current = { data: message.data, translationMd: existingTranslation };
+          setState({ type: 'streaming', data: message.data, translationMd: existingTranslation });
           setCharDiff(0); // Reset on new translation
           break;
         }
@@ -218,6 +231,7 @@ function App() {
             streamingStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
@@ -238,6 +252,7 @@ function App() {
             streamingStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
@@ -274,12 +289,51 @@ function App() {
             incrementalStateRef.current = null;
           }
           setIsContinuing(false);
+          setIsCanceling(false);
           setLastPartialInfo(null);
           break;
         }
         case 'documentChanged': {
           // Source document has changed
           setCharDiff(message.charDiff);
+          break;
+        }
+        case 'chunkSizeUpdate': {
+          // Chunk size was changed - update state
+          setState((prev) => {
+            if (prev.type === 'preview') {
+              return {
+                ...prev,
+                data: { ...prev.data, chunkSize: message.chunkSize },
+              };
+            }
+            if (prev.type === 'streaming' || prev.type === 'incremental') {
+              return {
+                ...prev,
+                data: { ...prev.data, chunkSize: message.chunkSize },
+              };
+            }
+            return prev;
+          });
+          break;
+        }
+        case 'modelUpdate': {
+          // Model was changed - update state
+          setState((prev) => {
+            if (prev.type === 'preview') {
+              return {
+                ...prev,
+                data: { ...prev.data, selectedModelId: message.modelId },
+              };
+            }
+            if (prev.type === 'streaming' || prev.type === 'incremental') {
+              return {
+                ...prev,
+                data: { ...prev.data, selectedModelId: message.modelId },
+              };
+            }
+            return prev;
+          });
           break;
         }
       }
@@ -299,9 +353,14 @@ function App() {
     vscode.postMessage({ type: 'languageChange', language });
   }, []);
 
-  // Handle reload
-  const handleReload = useCallback(() => {
-    vscode.postMessage({ type: 'requestTranslation', scope: 'full' });
+  // Handle update (incremental translation)
+  const handleUpdate = useCallback(() => {
+    vscode.postMessage({ type: 'updateTranslation' });
+  }, []);
+
+  // Handle retranslate (from scratch)
+  const handleRetranslate = useCallback(() => {
+    vscode.postMessage({ type: 'retranslate' });
   }, []);
 
   // Handle continue translation (for chunked documents)
@@ -329,6 +388,7 @@ function App() {
 
   // Handle cancel translation
   const handleCancelTranslation = useCallback(() => {
+    setIsCanceling(true);
     vscode.postMessage({ type: 'cancelTranslation' });
   }, []);
 
@@ -377,19 +437,11 @@ function App() {
 
   // Render based on state
   if (state.type === 'loading') {
-    return (
-      <>
-        <Loading message={state.message} />
-      </>
-    );
+    return <Loading message={state.message} />;
   }
 
   if (state.type === 'error') {
-    return (
-      <>
-        <ErrorMessage message={state.message} />
-      </>
-    );
+    return <ErrorMessage message={state.message} />;
   }
 
   // Streaming mode
@@ -403,14 +455,16 @@ function App() {
           selectedModelId={state.data.selectedModelId}
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
+          debugMode={state.data.debugMode}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
-          onReload={handleReload}
+          onUpdate={handleUpdate}
+          onRetranslate={handleRetranslate}
           isStreaming={true}
-          charDiff={0}
+          changedBlockCount={0}
         />
         <div className={`preview-container ${viewMode}`}>
           <PreviewPane
@@ -446,8 +500,13 @@ function App() {
               return progress !== null ? `Translating... ${progress}%` : 'Translating...';
             })()}
           </span>
-          <button type="button" className="cancel-btn" onClick={handleCancelTranslation}>
-            Cancel
+          <button
+            type="button"
+            className="cancel-btn"
+            onClick={handleCancelTranslation}
+            disabled={isCanceling}
+          >
+            {isCanceling ? 'Canceling...' : 'Cancel'}
           </button>
         </div>
       </div>
@@ -465,14 +524,16 @@ function App() {
           selectedModelId={state.data.selectedModelId}
           targetLanguage={state.data.targetLanguage}
           chunkSize={state.data.chunkSize}
+          debugMode={state.data.debugMode}
           onViewModeChange={setViewMode}
           onSyncScrollChange={setSyncScroll}
           onModelChange={handleModelChange}
           onLanguageChange={handleLanguageChange}
           onChunkSizeChange={handleChunkSizeChange}
-          onReload={handleReload}
+          onUpdate={handleUpdate}
+          onRetranslate={handleRetranslate}
           isStreaming={true}
-          charDiff={0}
+          changedBlockCount={0}
         />
         <div className={`preview-container ${viewMode}`}>
           <PreviewPane
@@ -499,8 +560,13 @@ function App() {
               ? `Translating... ${Math.round((lastPartialInfo.translatedUpTo / lastPartialInfo.totalChars) * 100)}%`
               : 'Translating...'}
           </span>
-          <button type="button" className="cancel-btn" onClick={handleCancelTranslation}>
-            Cancel
+          <button
+            type="button"
+            className="cancel-btn"
+            onClick={handleCancelTranslation}
+            disabled={isCanceling}
+          >
+            {isCanceling ? 'Canceling...' : 'Cancel'}
           </button>
         </div>
       </div>
@@ -508,11 +574,7 @@ function App() {
   }
 
   if (!parsedContent) {
-    return (
-      <>
-        <Loading message="Processing..." />
-      </>
-    );
+    return <Loading message="Processing..." />;
   }
 
   const currentContent = parsedContent;
@@ -521,7 +583,7 @@ function App() {
 
   // Create continue button HTML for translation pane
   const translationHtml = hasMoreToTranslate
-    ? currentContent.translation.html + `<div class="continue-translation-placeholder"></div>`
+    ? `${currentContent.translation.html}<div class="continue-translation-placeholder"></div>`
     : currentContent.translation.html;
 
   return (
@@ -533,14 +595,16 @@ function App() {
         selectedModelId={state.data.selectedModelId}
         targetLanguage={state.data.targetLanguage}
         chunkSize={state.data.chunkSize}
+        debugMode={state.data.debugMode}
         onViewModeChange={setViewMode}
         onSyncScrollChange={setSyncScroll}
         onModelChange={handleModelChange}
         onLanguageChange={handleLanguageChange}
         onChunkSizeChange={handleChunkSizeChange}
-        onReload={handleReload}
+        onUpdate={handleUpdate}
+        onRetranslate={handleRetranslate}
         isStreaming={false}
-        charDiff={charDiff}
+        changedBlockCount={charDiff}
       />
       <div className={`preview-container ${viewMode}`}>
         <PreviewPane

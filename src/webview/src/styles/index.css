@@ -51,6 +51,9 @@ body {
 /* Buttons */
 .toggle-btn,
 .action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   border: 1px solid var(--vscode-button-border, transparent);
@@ -71,7 +74,8 @@ body {
   color: var(--vscode-button-foreground);
 }
 
-.toggle-btn:disabled {
+.toggle-btn:disabled,
+.action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -152,9 +156,8 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  background: var(--vscode-inputValidation-warningBackground, #5a4a00);
-  color: var(--vscode-inputValidation-warningForeground, #cca700);
-  border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
   border-radius: 3px;
   font-size: 11px;
   font-weight: 500;
@@ -386,6 +389,7 @@ body {
 .pane-content {
   flex: 1;
   overflow-y: auto;
+  overflow-anchor: none; /* Prevent browser from adjusting scroll on content change */
   padding: 16px;
 }
 

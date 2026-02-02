@@ -699,22 +699,11 @@ export async function translateNextBlockChunk(
   }
 
   try {
-    // First, output already translated blocks
+    // Check if there are already translated blocks (for newline separator logic)
     const existingTranslations = blockTranslations || new Map<string, string>();
-    let existingTranslation = '';
-    for (let i = 0; i < startIndex; i++) {
-      const block = parsedDocument.blocks[i];
-      const translation = existingTranslations.get(block.hash);
-      if (translation !== undefined) {
-        if (existingTranslation.length > 0) {
-          existingTranslation += '\n';
-        }
-        existingTranslation += translation;
-      }
-    }
-    if (existingTranslation.length > 0) {
-      onChunk(existingTranslation);
-    }
+    const hasExistingTranslation = startIndex > 0 && existingTranslations.size > 0;
+    // Note: existing translation is now passed via StreamingData.existingTranslation
+    // and initialized in the webview, so we don't send it via onChunk anymore
 
     // Select next chunk of blocks
     const { blocksToTranslate, lastBlockIndex } = selectBlocksForChunk(
@@ -744,7 +733,7 @@ ${contentToTranslate}`;
     const response = await session.model.sendRequest(messages, {}, token);
 
     // Add newline before new content if there was existing content
-    if (existingTranslation.length > 0) {
+    if (hasExistingTranslation) {
       onChunk('\n');
     }
 

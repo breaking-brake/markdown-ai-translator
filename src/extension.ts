@@ -771,7 +771,8 @@ async function continueTranslation(
 
   // Create cancellation source for webview cancel
   currentCancellationSource = new vscode.CancellationTokenSource();
-  let partialTranslation = '';
+  // Initialize with existing translation (webview already shows this via existingTranslation)
+  let partialTranslation = existingTranslation;
 
   await vscode.window.withProgress(
     {

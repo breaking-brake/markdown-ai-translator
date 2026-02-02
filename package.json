@@ -105,6 +105,13 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug mode (shows additional debug options like small chunk sizes)"
+        },
+        "markdownTranslate.autoTranslateThreshold": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Automatically trigger Diff Update when N blocks changed (0 = disabled)"
         }
       }
     }

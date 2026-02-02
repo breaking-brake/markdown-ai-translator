@@ -12,6 +12,15 @@ const CHUNK_SIZE_OPTIONS = [
   { value: 50000, label: '50,000', debug: false },
 ];
 
+const AUTO_TRANSLATE_OPTIONS = [
+  { value: 0, label: 'OFF' },
+  { value: 1, label: '1' },
+  { value: 2, label: '2' },
+  { value: 3, label: '3' },
+  { value: 5, label: '5' },
+  { value: 10, label: '10' },
+];
+
 interface ToolbarProps {
   viewMode: ViewMode;
   syncScroll: boolean;
@@ -20,11 +29,13 @@ interface ToolbarProps {
   targetLanguage: string;
   chunkSize: number;
   debugMode?: boolean;
+  autoTranslateThreshold?: number;
   onViewModeChange: (mode: ViewMode) => void;
   onSyncScrollChange: (sync: boolean) => void;
   onModelChange: (modelId: string) => void;
   onLanguageChange: (language: string) => void;
   onChunkSizeChange: (chunkSize: number) => void;
+  onAutoTranslateThresholdChange: (threshold: number) => void;
   onUpdate: () => void;
   onRetranslate: () => void;
   isStreaming?: boolean;
@@ -39,11 +50,13 @@ export function Toolbar({
   targetLanguage,
   chunkSize,
   debugMode = false,
+  autoTranslateThreshold = 0,
   onViewModeChange,
   onSyncScrollChange,
   onModelChange,
   onLanguageChange,
   onChunkSizeChange,
+  onAutoTranslateThresholdChange,
   onUpdate,
   onRetranslate,
   isStreaming = false,
@@ -106,16 +119,47 @@ export function Toolbar({
               {changedBlockCount} {changedBlockCount === 1 ? 'block' : 'blocks'} changed
             </span>
           )}
-          <button
-            type="button"
-            className={`action-btn ${isStreaming ? 'streaming' : ''} ${hasDocumentChanges ? 'has-changes' : ''}`}
-            onClick={onUpdate}
-            title="Update translation (changed blocks only)"
-            disabled={isStreaming || !hasDocumentChanges}
-          >
-            <RefreshCw size={14} className={isStreaming ? 'spin' : ''} />
-            Diff Update
-          </button>
+          <div className="diff-update-group">
+            <button
+              type="button"
+              className={`diff-update-btn ${isStreaming ? 'streaming' : ''} ${hasDocumentChanges ? 'has-changes' : ''}`}
+              onClick={onUpdate}
+              title="Update translation (changed blocks only)"
+              disabled={isStreaming || !hasDocumentChanges}
+            >
+              <RefreshCw size={14} className={isStreaming ? 'spin' : ''} />
+              Diff Update
+            </button>
+            <span className="diff-update-divider" />
+            <Tooltip.Provider delayDuration={0}>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <span className="auto-translate-part">
+                    <span className="auto-translate-label">Auto:</span>
+                    <select
+                      className="auto-translate-select"
+                      value={autoTranslateThreshold}
+                      onChange={(e) => onAutoTranslateThresholdChange(Number(e.target.value))}
+                      disabled={isStreaming}
+                    >
+                      {AUTO_TRANSLATE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </Tooltip.Trigger>
+                <Tooltip.Portal>
+                  <Tooltip.Content className="tooltip-content" sideOffset={5}>
+                    <p>Auto-trigger Diff Update on save when N blocks change.</p>
+                    <p>OFF = manual only</p>
+                    <Tooltip.Arrow className="tooltip-arrow" />
+                  </Tooltip.Content>
+                </Tooltip.Portal>
+              </Tooltip.Root>
+            </Tooltip.Provider>
+          </div>
           <button
             type="button"
             className="action-btn"

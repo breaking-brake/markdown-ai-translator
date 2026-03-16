@@ -1,3 +1,9 @@
+## [0.3.2](https://github.com/breaking-brake/markdown-ai-translator/compare/v0.3.1...v0.3.2) (2026-03-16)
+
+### Bug Fixes
+
+* use file extension instead of languageId for markdown detection ([#14](https://github.com/breaking-brake/markdown-ai-translator/issues/14)) ([dc725da](https://github.com/breaking-brake/markdown-ai-translator/commit/dc725da4b157a0f94c743883592e47aba8a28270)), closes [#13](https://github.com/breaking-brake/markdown-ai-translator/issues/13)
+
 ## [0.3.1](https://github.com/breaking-brake/markdown-ai-translator/compare/v0.3.0...v0.3.1) (2026-02-02)
 
 ### Improvements

@@ -21,7 +21,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:markdown"
+    "onLanguage:markdown",
+    "workspaceContains:**/*.md"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -40,7 +41,7 @@
       "editor/title": [
         {
           "command": "markdownTranslate.translatePreview",
-          "when": "editorLangId == markdown",
+          "when": "resourceExtname == .md",
           "group": "navigation"
         }
       ]
@@ -50,7 +51,7 @@
         "command": "markdownTranslate.translatePreview",
         "key": "ctrl+shift+t",
         "mac": "cmd+shift+t",
-        "when": "editorLangId == markdown"
+        "when": "resourceExtname == .md"
       }
     ],
     "configuration": {

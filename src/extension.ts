@@ -173,7 +173,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      if (editor.document.languageId !== 'markdown') {
+      if (!editor.document.fileName.endsWith('.md')) {
         return;
       }
 
